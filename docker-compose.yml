@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  # The Database (Contains AdventureWorks pre-installed)
+  db:
+    image: chriseaton/adventureworks:postgres
+    container_name: local_adventureworks
+    platform: linux/amd64 # Required for Apple Silicon (M1/M2/M3) compatibility
+    environment:
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # Optional: Web GUI to see your data easily
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin_gui
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "8080:80"
+    depends_on:
+      - db
+
+volumes:
+  pgdata:

@@ -26,7 +26,8 @@ LLM_MODEL = "llama3"
 # ---------------------------------------------------------
 class ExecutionState(TypedDict):
     sql_query: str          # The query we are trying to run
-    result_data: Optional[str] # Markdown string of results
+    result_data: Optional[str] # Markdown string of results (for display)
+    result_dict: Optional[dict] # Raw data as dict (for Visualization Agent)
     error_message: Optional[str] # DB Error if failed
     retry_count: int        # How many times have we tried?
 
@@ -51,9 +52,10 @@ def execute_sql_node(state: ExecutionState):
         df = pd.read_sql(query, conn)
         
         # If successful, clear errors and save data
-        print("   ✅ Success!")
+        print(f"   ✅ Success! ({len(df)} rows)")
         return {
             "result_data": df.to_markdown(),
+            "result_dict": df.to_dict(orient="records"),
             "error_message": None,
             "retry_count": current_retries
         }
@@ -64,6 +66,7 @@ def execute_sql_node(state: ExecutionState):
         return {
             "error_message": error_msg,
             "result_data": None,
+            "result_dict": None,
             "retry_count": current_retries
         }
     finally:
@@ -187,6 +190,7 @@ class SQLExecutor:
             "sql_query": sql_query,
             "retry_count": 0,
             "result_data": None,
+            "result_dict": None,
             "error_message": None
         }
         
@@ -194,9 +198,12 @@ class SQLExecutor:
         final_state = self.app.invoke(initial_state)
         
         if final_state['result_data']:
-            return True, final_state['result_data']
+            # Return DataFrame + markdown string
+            df = pd.DataFrame(final_state['result_dict'])
+            markdown = final_state['result_data']
+            return True, df, markdown
         else:
-            return False, final_state['error_message']
+            return False, None, final_state['error_message']
 
 # ---------------------------------------------------------
 # TEST
@@ -210,8 +217,11 @@ if __name__ == "__main__":
     # Missing FROM clause on purpose to trigger the Fix Node
     bad_sql = "SELECT Name Production.Product WHERE ProductID = 1;"
     
-    success, output = executor.run(bad_sql)
-    print(f"\n📝 Final Result:\n{output}\n")
+    success, df, output = executor.run(bad_sql)
+    if success:
+        print(f"\n📝 Final Result:\n{output}\n")
+    else:
+        print(f"\n❌ Error:\n{output}\n")
 
 
     print("="*50)
@@ -225,10 +235,10 @@ if __name__ == "__main__":
     WHERE pi."Quantity" > 50;
     """
     
-    success, output = executor.run(generated_sql)
+    success, df, output = executor.run(generated_sql)
     
     if success:
-        # We truncate the output just so it doesn't flood your terminal
-        print(f"\n📝 Final Result (First 500 chars):\n{output[:500]}...\n") 
+        print(f"\n📝 Final Result (DataFrame shape: {df.shape}):")
+        print(df.head(10).to_markdown())
     else:
         print(f"\n❌ Error:\n{output}")

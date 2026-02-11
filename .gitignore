@@ -1,0 +1,42 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# ChromaDB local data
+src/agents/chroma_db_data/
+
+# Docuementation Files Overhead
+new file:   documentation/.DS_Store
+
+# Test output
+test_output/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment variables
+.env
+.env.local
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# Docker
+pgdata/

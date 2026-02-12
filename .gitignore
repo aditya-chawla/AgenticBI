@@ -19,8 +19,8 @@ env/
 # ChromaDB local data
 src/agents/chroma_db_data/
 
-# Docuementation Files Overhead
-new file:   documentation/.DS_Store
+# Documentation
+documentation/.DS_Store
 
 # Test output
 test_output/

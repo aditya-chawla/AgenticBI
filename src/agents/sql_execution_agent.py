@@ -7,18 +7,9 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 import re
 
-# ---------------------------------------------------------
-# CONFIGURATION
-# ---------------------------------------------------------
-DB_CONFIG = {
-    "dbname": "postgres", 
-    "user": "postgres",
-    "password": "password",
-    "host": "localhost",
-    "port": "5432"
-}
+from config import DB_CONFIG, LLM_MODEL, get_logger
 
-LLM_MODEL = "llama3"
+logger = get_logger("agent.sql_execution")
 
 # ---------------------------------------------------------
 # 1. DEFINE THE STATE
@@ -42,8 +33,7 @@ def execute_sql_node(state: ExecutionState):
     query = state['sql_query']
     current_retries = state.get('retry_count', 0)
     
-    print(f"\n⚡ Executing SQL (Attempt {current_retries + 1}):")
-    print(f"   {query[:60]}...") # Print preview
+    logger.info(f"Executing SQL (attempt {current_retries + 1}): {query[:80]}...")
 
     conn = None
     try:
@@ -52,7 +42,7 @@ def execute_sql_node(state: ExecutionState):
         df = pd.read_sql(query, conn)
         
         # If successful, clear errors and save data
-        print(f"   ✅ Success! ({len(df)} rows)")
+        logger.info(f"SQL executed successfully — {len(df)} rows returned")
         return {
             "result_data": df.to_markdown(),
             "result_dict": df.to_dict(orient="records"),
@@ -62,7 +52,7 @@ def execute_sql_node(state: ExecutionState):
 
     except Exception as e:
         error_msg = str(e)
-        print(f"   ❌ DB Error: {error_msg}")
+        logger.error(f"SQL execution failed: {error_msg}")
         return {
             "error_message": error_msg,
             "result_data": None,
@@ -80,7 +70,8 @@ def fix_query_node(state: ExecutionState):
     error_msg = state['error_message']
     retries = state['retry_count']
     
-    print("   🔧 Calling LLM to fix query...")
+    logger.info(f"Calling LLM to fix query (retry {retries + 1}/3)...")
+    logger.debug(f"Error was: {error_msg[:150]}")
 
     llm = ChatOllama(model=LLM_MODEL, temperature=0)
     
@@ -123,7 +114,7 @@ def fix_query_node(state: ExecutionState):
     if match:
         clean_sql = match.group(1)
         
-    print(f"   💡 LLM suggested fix: {clean_sql[:50]}...")
+    logger.info(f"LLM suggested fix: {clean_sql[:80]}...")
     
     return {
         "sql_query": clean_sql,
@@ -140,7 +131,7 @@ def should_continue(state: ExecutionState):
         return "success" # We got data!
     
     if state['retry_count'] >= 3:
-        print("   🛑 Max retries reached. Giving up.")
+        logger.warning("Max retries (3) reached. Giving up.")
         return "give_up"
     
     return "retry" # Loop back to fix_node

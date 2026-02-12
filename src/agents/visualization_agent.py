@@ -9,10 +9,13 @@ from langchain_core.output_parsers import StrOutputParser
 import vizro.plotly.express as vpx
 import plotly.io as pio
 
+from config import LLM_MODEL, get_logger
+
+logger = get_logger("agent.visualization")
+
 # ---------------------------------------------------------
 # CONFIGURATION
 # ---------------------------------------------------------
-LLM_MODEL = "llama3"
 pio.templates.default = "vizro_dark"
 
 # Supported chart types and their required/optional params
@@ -67,7 +70,7 @@ def decide_chart_node(state: VisualizationState):
     """
     Uses Llama 3 to decide the best chart type and column mappings.
     """
-    print("🎨 Deciding chart type...")
+    logger.info("Deciding chart type...")
 
     llm = ChatOllama(model=LLM_MODEL, temperature=0)
 
@@ -197,7 +200,7 @@ Reply with ONLY this JSON (no markdown, no explanation):
             q = state["user_question"]
             spec.title = q[:80].title() if q else "Chart"
 
-        print(f"   ✅ Chart spec: {spec.chart_type} (x={spec.x}, y={spec.y})")
+        logger.info("Chart spec decided: %s (x=%s, y=%s)", spec.chart_type, spec.x, spec.y)
         return {
             "chart_spec_json": json_str,
             "chart_spec": spec.model_dump(),
@@ -206,7 +209,7 @@ Reply with ONLY this JSON (no markdown, no explanation):
 
     except Exception as e:
         error_msg = f"Failed to parse chart spec: {e}\nLLM response: {response[:200]}"
-        print(f"   ❌ {error_msg}")
+        logger.warning("Parse failed: %s", error_msg)
         return {
             "error_message": error_msg,
             "retry_count": state["retry_count"] + 1,
@@ -220,7 +223,7 @@ def after_decide(state: VisualizationState):
     if state.get("chart_spec") is not None:
         return "render"
     if state["retry_count"] >= 3:
-        print("   🛑 Max retries reached. Giving up.")
+        logger.error("Max retries reached in decide phase. Giving up.")
         return "give_up"
     return "retry_decide"
 
@@ -229,7 +232,7 @@ def after_render(state: VisualizationState):
     if state.get("figure_json") is not None:
         return "success"
     if state["retry_count"] >= 3:
-        print("   🛑 Max retries reached. Giving up.")
+        logger.error("Max retries reached in render phase. Giving up.")
         return "give_up"
     return "retry_decide"
 
@@ -303,17 +306,17 @@ class VisualizationAgent:
             spec_dict = state["chart_spec"]
             spec = ChartSpec.model_validate(spec_dict)
 
-            print(f"📊 Rendering {spec.chart_type} chart...")
+            logger.info("Rendering %s chart...", spec.chart_type)
             try:
                 fig = build_figure(df, spec)
-                print("   ✅ Chart rendered successfully!")
+                logger.info("Chart rendered successfully.")
                 return {
                     "figure_json": fig.to_json(),
                     "error_message": None,
                 }
             except Exception as e:
                 error_msg = f"Render error: {e}"
-                print(f"   ❌ {error_msg}")
+                logger.warning("Render failed: %s", error_msg)
                 return {
                     "error_message": error_msg,
                     "chart_spec": None,  # Force re-decide

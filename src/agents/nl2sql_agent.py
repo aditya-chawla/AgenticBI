@@ -5,17 +5,15 @@ from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
-# ---------------------------------------------------------
-# CONFIGURATION
-# ---------------------------------------------------------
-VECTOR_DB_PATH = "./chroma_db_data"
-LLM_MODEL = "llama3"  # The model you downloaded via Ollama
+from config import VECTOR_DB_PATH, LLM_MODEL, EMBEDDING_MODEL, get_logger
+
+logger = get_logger("agent.nl2sql")
 
 class NL2SQLAgent:
     def __init__(self):
         # 1. Initialize the Librarian (Vector DB)
         # We use the same 'all-MiniLM-L6-v2' to ensure we speak the same language as Agent 1
-        self.embedding_function = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+        self.embedding_function = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
         self.vector_store = Chroma(
             persist_directory=VECTOR_DB_PATH, 
             embedding_function=self.embedding_function
@@ -28,15 +26,15 @@ class NL2SQLAgent:
         """
         Retrieves the top K most relevant table definitions (DDL) from the Vector DB.
         """
-        print(f"🔍 Looking up schema for: '{question}'...")
+        logger.info(f"Looking up schema for: '{question}'...")
         results = self.vector_store.similarity_search(question, k=k)
         
         # Combine the DDLs into one big string context
         context = "\n\n".join([doc.page_content for doc in results])
         
-        # Log which tables were picked (for debugging)
+        logger.debug(f"Retrieved {len(results)} DDL snippets")
         table_names = [doc.metadata.get('table_name') for doc in results]
-        print(f"   > Found relevant tables: {table_names}")
+        logger.info(f"Relevant tables: {table_names}")
         
         return context
 
@@ -74,7 +72,7 @@ class NL2SQLAgent:
         chain = prompt | self.llm | StrOutputParser()
         
         # Step D: Execute
-        print("🤖 Generating SQL...")
+        logger.info("Generating SQL via LLM...")
         response = chain.invoke({
             "schema": schema_context, 
             "question": question

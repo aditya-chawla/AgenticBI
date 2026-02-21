@@ -11,6 +11,69 @@ from config import DB_CONFIG, LLM_MODEL, get_logger
 
 logger = get_logger("agent.sql_execution")
 
+
+# ---------------------------------------------------------
+# DETERMINISTIC QUOTE FIXER
+# ---------------------------------------------------------
+# AdventureWorks uses case-sensitive "Schema"."Table" identifiers.
+# The LLM frequently generates unquoted or partially-quoted names.
+# This regex-based fixer is a safety net that runs BEFORE execution.
+
+import re as _re
+
+# Known AdventureWorks schemas
+_AW_SCHEMAS = (
+    "HumanResources", "Person", "Production", "Purchasing",
+    "Sales", "dbo", "pr",
+)
+_SCHEMA_PATTERN = "|".join(_AW_SCHEMAS)
+
+# Matches Schema.Table (with optional existing quotes) and ensures both parts
+# are double-quoted.  Handles:
+#   HumanResources.Employee          →  "HumanResources"."Employee"
+#   "HumanResources".Employee        →  "HumanResources"."Employee"
+#   "HumanResources"."Employee"      →  "HumanResources"."Employee"  (no-op)
+_SCHEMA_TABLE_RE = _re.compile(
+    r'"?(' + _SCHEMA_PATTERN + r')"?\s*\.\s*"?([A-Za-z_]\w*)"?',
+    _re.IGNORECASE,
+)
+
+
+
+# Matches alias.ColumnName patterns where alias is a short lowercase identifier
+# and ColumnName starts with an uppercase letter (CamelCase).
+# Does NOT match if the column is already quoted: alias."Column"
+# Pattern 1: unquoted alias   →  e.BusinessEntityID  →  e."BusinessEntityID"
+_ALIAS_COLUMN_UNQUOTED_RE = _re.compile(
+    r'\b([a-z]\w{0,4})\.(?!")([A-Z]\w*)\b'
+)
+# Pattern 2: quoted alias     →  "s".TerritoryID     →  "s"."TerritoryID"
+_ALIAS_COLUMN_QUOTED_RE = _re.compile(
+    r'"([a-z]\w{0,4})"\.(?!")([A-Z]\w*)\b'
+)
+
+
+def _ensure_quoted_identifiers(sql: str) -> str:
+    """Deterministically double-quote all Schema.Table and alias.Column references."""
+    # Step 1: fix Schema.Table
+    def _schema_replacer(m):
+        schema = m.group(1)
+        table = m.group(2)
+        return f'"{ schema }"."{ table }"'
+    sql = _SCHEMA_TABLE_RE.sub(_schema_replacer, sql)
+
+    # Step 2a: fix unquoted alias.Column  (e.BusinessEntityID → e."BusinessEntityID")
+    def _col_unquoted(m):
+        return f'{ m.group(1) }."{ m.group(2) }"'
+    sql = _ALIAS_COLUMN_UNQUOTED_RE.sub(_col_unquoted, sql)
+
+    # Step 2b: fix quoted alias.Column  ("s".TerritoryID → "s"."TerritoryID")
+    def _col_quoted(m):
+        return f'"{ m.group(1) }"."{m.group(2)}"'
+    sql = _ALIAS_COLUMN_QUOTED_RE.sub(_col_quoted, sql)
+
+    return sql
+
 # ---------------------------------------------------------
 # 1. DEFINE THE STATE
 #    (The memory passed between the Execute Node and the Fix Node)
@@ -29,9 +92,16 @@ class ExecutionState(TypedDict):
 def execute_sql_node(state: ExecutionState):
     """
     Attempts to run the SQL in Postgres.
+    Applies deterministic quote-fixing before execution.
     """
-    query = state['sql_query']
+    raw_query = state['sql_query']
+    query = _ensure_quoted_identifiers(raw_query)
     current_retries = state.get('retry_count', 0)
+
+    if query != raw_query:
+        logger.info("Quote-fixer applied to SQL identifiers")
+        logger.debug("Before: %s", raw_query[:120])
+        logger.debug("After:  %s", query[:120])
     
     logger.info(f"Executing SQL (attempt {current_retries + 1}): {query[:80]}...")
 
@@ -108,11 +178,14 @@ def fix_query_node(state: ExecutionState):
     # 1. Remove Markdown
     clean_sql = fixed_sql.replace("```sql", "").replace("```", "").strip()
     
-    # 2. Regex to find the actual SQL statement (starts with SELECT, ends with ;)
-    # This ignores intro text like "Here is the query:"
-    match = re.search(r"(SELECT.*?;)", clean_sql, re.DOTALL | re.IGNORECASE)
+    # 2. Regex to find the actual SQL statement
+    # Try with trailing semicolon first, then without
+    match = re.search(r"(SELECT\b.*?;)", clean_sql, re.DOTALL | re.IGNORECASE)
+    if not match:
+        # No semicolon — grab from first SELECT to end of string
+        match = re.search(r"(SELECT\b.*)", clean_sql, re.DOTALL | re.IGNORECASE)
     if match:
-        clean_sql = match.group(1)
+        clean_sql = match.group(1).rstrip(";").strip()
         
     logger.info(f"LLM suggested fix: {clean_sql[:80]}...")
     

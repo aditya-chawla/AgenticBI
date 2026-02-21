@@ -364,4 +364,6 @@ class VisualizationAgent:
             fig = pio.from_json(final_state["figure_json"])
             return True, fig, final_state["chart_spec"]
         else:
-            return False, None, None
+            error = final_state.get("error_message", "Visualization failed after max retries")
+            logger.error("Visualization pipeline failed: %s", error)
+            return False, None, error

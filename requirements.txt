@@ -1,0 +1,25 @@
+# Core LLM & Agent Framework
+langchain-core
+langchain-ollama
+langchain-huggingface
+langchain-chroma
+langgraph
+
+# Database
+psycopg2-binary
+
+# Data
+pandas
+tabulate
+
+# Embeddings & Vector Store
+chromadb
+sentence-transformers
+
+# Visualization
+vizro
+plotly
+
+# Utilities
+pydantic
+pypdf

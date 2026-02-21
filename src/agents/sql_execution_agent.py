@@ -7,18 +7,72 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 import re
 
-# ---------------------------------------------------------
-# CONFIGURATION
-# ---------------------------------------------------------
-DB_CONFIG = {
-    "dbname": "postgres", 
-    "user": "postgres",
-    "password": "password",
-    "host": "localhost",
-    "port": "5432"
-}
+from config import DB_CONFIG, LLM_MODEL, get_logger
 
-LLM_MODEL = "llama3"
+logger = get_logger("agent.sql_execution")
+
+
+# ---------------------------------------------------------
+# DETERMINISTIC QUOTE FIXER
+# ---------------------------------------------------------
+# AdventureWorks uses case-sensitive "Schema"."Table" identifiers.
+# The LLM frequently generates unquoted or partially-quoted names.
+# This regex-based fixer is a safety net that runs BEFORE execution.
+
+import re as _re
+
+# Known AdventureWorks schemas
+_AW_SCHEMAS = (
+    "HumanResources", "Person", "Production", "Purchasing",
+    "Sales", "dbo", "pr",
+)
+_SCHEMA_PATTERN = "|".join(_AW_SCHEMAS)
+
+# Matches Schema.Table (with optional existing quotes) and ensures both parts
+# are double-quoted.  Handles:
+#   HumanResources.Employee          →  "HumanResources"."Employee"
+#   "HumanResources".Employee        →  "HumanResources"."Employee"
+#   "HumanResources"."Employee"      →  "HumanResources"."Employee"  (no-op)
+_SCHEMA_TABLE_RE = _re.compile(
+    r'"?(' + _SCHEMA_PATTERN + r')"?\s*\.\s*"?([A-Za-z_]\w*)"?',
+    _re.IGNORECASE,
+)
+
+
+
+# Matches alias.ColumnName patterns where alias is a short lowercase identifier
+# and ColumnName starts with an uppercase letter (CamelCase).
+# Does NOT match if the column is already quoted: alias."Column"
+# Pattern 1: unquoted alias   →  e.BusinessEntityID  →  e."BusinessEntityID"
+_ALIAS_COLUMN_UNQUOTED_RE = _re.compile(
+    r'\b([a-z]\w{0,4})\.(?!")([A-Z]\w*)\b'
+)
+# Pattern 2: quoted alias     →  "s".TerritoryID     →  "s"."TerritoryID"
+_ALIAS_COLUMN_QUOTED_RE = _re.compile(
+    r'"([a-z]\w{0,4})"\.(?!")([A-Z]\w*)\b'
+)
+
+
+def _ensure_quoted_identifiers(sql: str) -> str:
+    """Deterministically double-quote all Schema.Table and alias.Column references."""
+    # Step 1: fix Schema.Table
+    def _schema_replacer(m):
+        schema = m.group(1)
+        table = m.group(2)
+        return f'"{ schema }"."{ table }"'
+    sql = _SCHEMA_TABLE_RE.sub(_schema_replacer, sql)
+
+    # Step 2a: fix unquoted alias.Column  (e.BusinessEntityID → e."BusinessEntityID")
+    def _col_unquoted(m):
+        return f'{ m.group(1) }."{ m.group(2) }"'
+    sql = _ALIAS_COLUMN_UNQUOTED_RE.sub(_col_unquoted, sql)
+
+    # Step 2b: fix quoted alias.Column  ("s".TerritoryID → "s"."TerritoryID")
+    def _col_quoted(m):
+        return f'"{ m.group(1) }"."{m.group(2)}"'
+    sql = _ALIAS_COLUMN_QUOTED_RE.sub(_col_quoted, sql)
+
+    return sql
 
 # ---------------------------------------------------------
 # 1. DEFINE THE STATE
@@ -26,7 +80,8 @@ LLM_MODEL = "llama3"
 # ---------------------------------------------------------
 class ExecutionState(TypedDict):
     sql_query: str          # The query we are trying to run
-    result_data: Optional[str] # Markdown string of results
+    result_data: Optional[str] # Markdown string of results (for display)
+    result_dict: Optional[dict] # Raw data as dict (for Visualization Agent)
     error_message: Optional[str] # DB Error if failed
     retry_count: int        # How many times have we tried?
 
@@ -37,12 +92,18 @@ class ExecutionState(TypedDict):
 def execute_sql_node(state: ExecutionState):
     """
     Attempts to run the SQL in Postgres.
+    Applies deterministic quote-fixing before execution.
     """
-    query = state['sql_query']
+    raw_query = state['sql_query']
+    query = _ensure_quoted_identifiers(raw_query)
     current_retries = state.get('retry_count', 0)
+
+    if query != raw_query:
+        logger.info("Quote-fixer applied to SQL identifiers")
+        logger.debug("Before: %s", raw_query[:120])
+        logger.debug("After:  %s", query[:120])
     
-    print(f"\n⚡ Executing SQL (Attempt {current_retries + 1}):")
-    print(f"   {query[:60]}...") # Print preview
+    logger.info(f"Executing SQL (attempt {current_retries + 1}): {query[:80]}...")
 
     conn = None
     try:
@@ -51,19 +112,21 @@ def execute_sql_node(state: ExecutionState):
         df = pd.read_sql(query, conn)
         
         # If successful, clear errors and save data
-        print("   ✅ Success!")
+        logger.info(f"SQL executed successfully — {len(df)} rows returned")
         return {
             "result_data": df.to_markdown(),
+            "result_dict": df.to_dict(orient="records"),
             "error_message": None,
             "retry_count": current_retries
         }
 
     except Exception as e:
         error_msg = str(e)
-        print(f"   ❌ DB Error: {error_msg}")
+        logger.error(f"SQL execution failed: {error_msg}")
         return {
             "error_message": error_msg,
             "result_data": None,
+            "result_dict": None,
             "retry_count": current_retries
         }
     finally:
@@ -77,7 +140,8 @@ def fix_query_node(state: ExecutionState):
     error_msg = state['error_message']
     retries = state['retry_count']
     
-    print("   🔧 Calling LLM to fix query...")
+    logger.info(f"Calling LLM to fix query (retry {retries + 1}/3)...")
+    logger.debug(f"Error was: {error_msg[:150]}")
 
     llm = ChatOllama(model=LLM_MODEL, temperature=0)
     
@@ -114,13 +178,16 @@ def fix_query_node(state: ExecutionState):
     # 1. Remove Markdown
     clean_sql = fixed_sql.replace("```sql", "").replace("```", "").strip()
     
-    # 2. Regex to find the actual SQL statement (starts with SELECT, ends with ;)
-    # This ignores intro text like "Here is the query:"
-    match = re.search(r"(SELECT.*?;)", clean_sql, re.DOTALL | re.IGNORECASE)
+    # 2. Regex to find the actual SQL statement
+    # Try with trailing semicolon first, then without
+    match = re.search(r"(SELECT\b.*?;)", clean_sql, re.DOTALL | re.IGNORECASE)
+    if not match:
+        # No semicolon — grab from first SELECT to end of string
+        match = re.search(r"(SELECT\b.*)", clean_sql, re.DOTALL | re.IGNORECASE)
     if match:
-        clean_sql = match.group(1)
+        clean_sql = match.group(1).rstrip(";").strip()
         
-    print(f"   💡 LLM suggested fix: {clean_sql[:50]}...")
+    logger.info(f"LLM suggested fix: {clean_sql[:80]}...")
     
     return {
         "sql_query": clean_sql,
@@ -137,7 +204,7 @@ def should_continue(state: ExecutionState):
         return "success" # We got data!
     
     if state['retry_count'] >= 3:
-        print("   🛑 Max retries reached. Giving up.")
+        logger.warning("Max retries (3) reached. Giving up.")
         return "give_up"
     
     return "retry" # Loop back to fix_node
@@ -187,6 +254,7 @@ class SQLExecutor:
             "sql_query": sql_query,
             "retry_count": 0,
             "result_data": None,
+            "result_dict": None,
             "error_message": None
         }
         
@@ -194,9 +262,12 @@ class SQLExecutor:
         final_state = self.app.invoke(initial_state)
         
         if final_state['result_data']:
-            return True, final_state['result_data']
+            # Return DataFrame + markdown string
+            df = pd.DataFrame(final_state['result_dict'])
+            markdown = final_state['result_data']
+            return True, df, markdown
         else:
-            return False, final_state['error_message']
+            return False, None, final_state['error_message']
 
 # ---------------------------------------------------------
 # TEST
@@ -210,8 +281,11 @@ if __name__ == "__main__":
     # Missing FROM clause on purpose to trigger the Fix Node
     bad_sql = "SELECT Name Production.Product WHERE ProductID = 1;"
     
-    success, output = executor.run(bad_sql)
-    print(f"\n📝 Final Result:\n{output}\n")
+    success, df, output = executor.run(bad_sql)
+    if success:
+        print(f"\n📝 Final Result:\n{output}\n")
+    else:
+        print(f"\n❌ Error:\n{output}\n")
 
 
     print("="*50)
@@ -225,10 +299,10 @@ if __name__ == "__main__":
     WHERE pi."Quantity" > 50;
     """
     
-    success, output = executor.run(generated_sql)
+    success, df, output = executor.run(generated_sql)
     
     if success:
-        # We truncate the output just so it doesn't flood your terminal
-        print(f"\n📝 Final Result (First 500 chars):\n{output[:500]}...\n") 
+        print(f"\n📝 Final Result (DataFrame shape: {df.shape}):")
+        print(df.head(10).to_markdown())
     else:
         print(f"\n❌ Error:\n{output}")

@@ -5,18 +5,9 @@ from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 
-# ---------------------------------------------------------
-# CONFIGURATION
-# ---------------------------------------------------------
-DB_CONFIG = {
-    "dbname": "postgres", 
-    "user": "postgres",
-    "password": "password",
-    "host": "localhost",
-    "port": "5432"
-}
+from config import DB_CONFIG, VECTOR_DB_PATH, EMBEDDING_MODEL, get_logger
 
-VECTOR_DB_PATH = "./chroma_db_data"
+logger = get_logger("agent.schema_ingestion")
 
 class SchemaIngestionAgent:
     def __init__(self, db_config):
@@ -27,7 +18,7 @@ class SchemaIngestionAgent:
         Connects to DB and generates 'CREATE TABLE' statements.
         Returns a list of LangChain Documents.
         """
-        print(f"🔌 Connecting to database '{self.db_config['dbname']}'...")
+        logger.info(f"Connecting to database '{self.db_config['dbname']}'...")
         docs = []
         conn = None
         
@@ -43,7 +34,7 @@ class SchemaIngestionAgent:
                 AND table_type = 'BASE TABLE';
             """)
             tables = cur.fetchall()
-            print(f"🔍 Found {len(tables)} tables. Generating blueprints...")
+            logger.info(f"Found {len(tables)} tables. Generating DDL blueprints...")
 
             for schema, table in tables:
                 full_table_name = f"{schema}.{table}"
@@ -79,24 +70,24 @@ class SchemaIngestionAgent:
             return docs
 
         except Exception as e:
-            print(f"❌ DB Error: {e}")
+            logger.error(f"DB Error during DDL extraction: {e}")
             return []
         finally:
             if conn: conn.close()
 
     def build_index(self, documents):
         if not documents:
-            print("⚠️ No data to index.")
+            logger.warning("No documents to index. Skipping.")
             return
 
-        print(f"🧠 Vectorizing {len(documents)} tables (using free local model)...")
+        logger.info(f"Vectorizing {len(documents)} tables using '{EMBEDDING_MODEL}'...")
         
         # 1. Clear old index if it exists (so we don't get duplicates)
         if os.path.exists(VECTOR_DB_PATH):
             shutil.rmtree(VECTOR_DB_PATH)
 
         # 2. Initialize Free Local Embedding Model
-        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+        embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
 
         # 3. Create Vector DB
         vector_store = Chroma.from_documents(
@@ -105,7 +96,7 @@ class SchemaIngestionAgent:
             persist_directory=VECTOR_DB_PATH
         )
         
-        print(f"✅ Success! Schema Index saved to '{VECTOR_DB_PATH}'")
+        logger.info(f"Schema index saved to '{VECTOR_DB_PATH}'")
 
 if __name__ == "__main__":
     agent = SchemaIngestionAgent(DB_CONFIG)

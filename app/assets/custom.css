@@ -1,0 +1,38 @@
+/*
+  Hide the Vizro default header bar (dashboard title + theme toggle row)
+  and the page-level title heading so only our custom component shows.
+*/
+
+/* Vizro top nav bar (contains dashboard title + theme toggle) */
+#header,
+nav.navbar,
+.navbar {
+    display: none !important;
+}
+
+/* Vizro page title heading (the second "Agentic BI") */
+.page-header,
+h1.heading-1,
+h2.heading-2,
+h2.heading-3,
+[data-testid="page-title"],
+.page-title {
+    display: none !important;
+}
+
+/* Remove the padding/margin Vizro adds around the page area */
+.page-main,
+.tab-content,
+.page-content,
+main {
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+/* Make the root Dash container full height with no overflow */
+body, #react-entry-point, #_dash-app-content, .dash-renderer {
+    height: 100vh !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}

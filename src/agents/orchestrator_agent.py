@@ -27,6 +27,24 @@ logger = get_logger("agent.orchestrator")
 # Max orchestrator-level retries (on top of each agent's internal retries)
 MAX_RETRIES = 2
 
+# Module-level singletons — HuggingFace model loaded once, not per call
+_nl2sql_agent: Optional[Any] = None
+_sql_executor: Optional[Any] = None
+
+
+def _get_nl2sql_agent() -> "NL2SQLAgent":
+    global _nl2sql_agent
+    if _nl2sql_agent is None:
+        _nl2sql_agent = NL2SQLAgent()
+    return _nl2sql_agent
+
+
+def _get_sql_executor() -> "SQLExecutor":
+    global _sql_executor
+    if _sql_executor is None:
+        _sql_executor = SQLExecutor()
+    return _sql_executor
+
 
 # ---------------------------------------------------------
 # 1. ORCHESTRATOR STATE
@@ -64,7 +82,7 @@ def generate_sql_node(state: OrchestratorState) -> dict:
     logger.info("STAGE: generate_sql  (retry %d/%d)", state["retry_count"], MAX_RETRIES)
     logger.info("=" * 60)
 
-    agent = NL2SQLAgent()
+    agent = _get_nl2sql_agent()
     hint = state.get("correction_hint")
 
     try:
@@ -92,7 +110,7 @@ def execute_sql_node(state: OrchestratorState) -> dict:
     logger.info("STAGE: execute_sql")
     logger.info("=" * 60)
 
-    executor = SQLExecutor()
+    executor = _get_sql_executor()
 
     try:
         success, df, output = executor.run(state["sql_query"])
@@ -385,3 +403,7 @@ if __name__ == "__main__":
 
     if result["df"] is not None:
         print(f"\n📝 Data Preview:\n{result['df'].head().to_markdown()}")
+
+    # Show chart in browser if we have a figure
+    if result.get("figure") is not None:
+        result["figure"].show()

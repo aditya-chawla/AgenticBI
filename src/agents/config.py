@@ -10,16 +10,20 @@ import logging
 # DATABASE CONFIGURATION
 # ---------------------------------------------------------
 DB_CONFIG = {
-    "dbname": "postgres",
-    "user": "postgres",
-    "password": "password",
-    "host": "localhost",
-    "port": "5432",
+    "dbname": os.environ.get("DB_NAME", "postgres"),
+    "user": os.environ.get("DB_USER", "postgres"),
+    "password": os.environ.get("DB_PASSWORD", "password"),
+    "host": os.environ.get("DB_HOST", "localhost"),
+    "port": os.environ.get("DB_PORT", "5432"),
 }
 
 # ---------------------------------------------------------
 # LLM CONFIGURATION
 # ---------------------------------------------------------
+# Use a small model if you have limited RAM (~4 GB). Options:
+#   llama3.2:1b  ~1.3 GB  (low memory)
+#   phi3:mini    ~2.3 GB
+#   llama3       ~4.6 GB  (better quality, needs ~5 GB free)
 LLM_MODEL = "llama3"
 
 # ---------------------------------------------------------

@@ -70,9 +70,14 @@ class NL2SQLAgent:
         4. Do NOT make up columns. Use the schema provided.
         5. CRITICAL: This database is Case-Sensitive.
            - You MUST wrap ALL Schema, Table, and Column names in Double Quotes.
+           - Use TWO-part identifiers ONLY: "SchemaName"."TableName"
+           - NEVER use three-part identifiers. Do NOT prefix with "public" or a database name.
            - Correct:   SELECT "Name" FROM "Production"."Product"
+           - Correct:   SELECT "e"."VacationHours" FROM "HumanResources"."Employee" e
            - Incorrect: SELECT Name FROM Production.Product
-           - Every identifier that comes from the schema must be double-quoted.
+           - Incorrect: "public"."Sales"."SalesOrderHeader"   ← NEVER do this
+           - Incorrect: "database"."Schema"."Table"           ← NEVER do this
+           - The schemas in this database are: Sales, HumanResources, Production, Purchasing, Person.
         
         ### SQL QUERY:
         """

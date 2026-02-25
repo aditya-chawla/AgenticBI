@@ -14,7 +14,7 @@ tabulate
 
 # Embeddings & Vector Store
 chromadb
-sentence-transformers
+sentence-transformers>=2.2.0,<3.0.0
 
 # Visualization
 vizro

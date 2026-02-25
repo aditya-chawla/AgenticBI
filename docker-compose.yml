@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   # The Database (Contains AdventureWorks pre-installed)
   db:
@@ -25,5 +23,27 @@ services:
     depends_on:
       - db
 
+  # Vizro frontend + agents (chat, dashboard, guardrails → orchestrator)
+  app:
+    build: .
+    container_name: agentic_bi_app
+    ports:
+      - "8050:8050"
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: postgres
+      DB_USER: postgres
+      DB_PASSWORD: password
+      # Ollama must be running on the host (not in Docker)
+      OLLAMA_HOST: http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - chroma_data:/app/src/agents/chroma_db_data
+    depends_on:
+      - db
+
 volumes:
   pgdata:
+  chroma_data:

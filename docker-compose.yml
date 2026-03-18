@@ -37,6 +37,8 @@ services:
       DB_PASSWORD: password
       # Ollama must be running on the host (not in Docker)
       OLLAMA_HOST: http://host.docker.internal:11434
+    env_file:
+      - .env
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

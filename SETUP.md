@@ -162,7 +162,12 @@ Then open **http://localhost:8050** in your browser. Use the chat on the right; 
 
 ### Step 8: Run the Orchestrator from CLI (Optional)
 
-From project root: `cd src/agents` then `python -m orchestrator_agent` for a CLI pipeline test.
+From project root: 
+```bash
+export OPENROUTER_API_KEY="your_api_key_here"
+cd src/agents
+python -m orchestrator_agent
+```
 
 ### Step 9 (Optional): Run Tests
 

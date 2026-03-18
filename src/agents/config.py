@@ -5,6 +5,10 @@ Database credentials, LLM model, paths, and logging setup.
 
 import os
 import logging
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # ---------------------------------------------------------
 # DATABASE CONFIGURATION
@@ -20,11 +24,10 @@ DB_CONFIG = {
 # ---------------------------------------------------------
 # LLM CONFIGURATION
 # ---------------------------------------------------------
-# Use a small model if you have limited RAM (~4 GB). Options:
-#   llama3.2:1b  ~1.3 GB  (low memory)
-#   phi3:mini    ~2.3 GB
-#   llama3       ~4.6 GB  (better quality, needs ~5 GB free)
-LLM_MODEL = "llama3"
+# You can change this to any valid OpenRouter model string (e.g. openai/gpt-4o-mini)
+LLM_MODEL = os.environ.get("LLM_MODEL", "meta-llama/llama-3.3-70b-instruct")
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 # ---------------------------------------------------------
 # VECTOR DB CONFIGURATION

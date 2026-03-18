@@ -3,13 +3,13 @@ import pandas as pd
 from typing import TypedDict, Optional
 from pydantic import BaseModel, Field
 from langgraph.graph import StateGraph, END
-from langchain_ollama import ChatOllama
+from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 import vizro.plotly.express as vpx
 import plotly.io as pio
 
-from config import LLM_MODEL, get_logger
+from config import LLM_MODEL, OPENROUTER_API_KEY, OPENROUTER_BASE_URL, get_logger
 
 logger = get_logger("agent.visualization")
 
@@ -72,7 +72,12 @@ def decide_chart_node(state: VisualizationState):
     """
     logger.info("Deciding chart type...")
 
-    llm = ChatOllama(model=LLM_MODEL, temperature=0)
+    llm = ChatOpenAI(
+        model=LLM_MODEL, 
+        temperature=0,
+        api_key=OPENROUTER_API_KEY,
+        base_url=OPENROUTER_BASE_URL
+    )
 
     template = """You are a chart-type selector. Pick the best chart for the question and data.
 

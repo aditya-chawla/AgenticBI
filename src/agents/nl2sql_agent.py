@@ -1,11 +1,11 @@
 import os
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_ollama import ChatOllama
+from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
-from config import VECTOR_DB_PATH, LLM_MODEL, EMBEDDING_MODEL, get_logger
+from config import VECTOR_DB_PATH, LLM_MODEL, EMBEDDING_MODEL, OPENROUTER_API_KEY, OPENROUTER_BASE_URL, get_logger
 
 logger = get_logger("agent.nl2sql")
 
@@ -19,8 +19,13 @@ class NL2SQLAgent:
             embedding_function=self.embedding_function
         )
         
-        # 2. Initialize the Brain (Ollama Local)
-        self.llm = ChatOllama(model=LLM_MODEL, temperature=0)
+        # 2. Initialize the Brain (OpenRouter)
+        self.llm = ChatOpenAI(
+            model=LLM_MODEL, 
+            temperature=0,
+            api_key=OPENROUTER_API_KEY,
+            base_url=OPENROUTER_BASE_URL
+        )
 
     def get_relevant_schema(self, question: str, k: int = 3) -> str:
         """

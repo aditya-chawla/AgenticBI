@@ -1,6 +1,7 @@
 # Core LLM & Agent Framework
 langchain-core
 langchain-ollama
+langchain-openai
 langchain-huggingface
 langchain-chroma
 langgraph
@@ -23,3 +24,4 @@ plotly
 # Utilities
 pydantic
 pypdf
+python-dotenv

@@ -4,6 +4,8 @@ import shutil
 from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
+import networkx as nx
+import json
 
 from config import DB_CONFIG, VECTOR_DB_PATH, EMBEDDING_MODEL, get_logger
 
@@ -20,6 +22,8 @@ class SchemaIngestionAgent:
         """
         logger.info(f"Connecting to database '{self.db_config['dbname']}'...")
         docs = []
+        schema_graph = nx.DiGraph()
+        schema_dict = {}
         conn = None
         
         try:
@@ -69,7 +73,6 @@ class SchemaIngestionAgent:
                           AND tc.table_schema = kcu.table_schema
                         JOIN information_schema.constraint_column_usage AS ccu
                           ON ccu.constraint_name = tc.constraint_name
-                          AND ccu.table_schema = tc.table_schema
                     WHERE tc.constraint_type = 'FOREIGN KEY' 
                         AND tc.table_schema = '{schema}'
                         AND tc.table_name = '{table}';
@@ -93,15 +96,26 @@ class SchemaIngestionAgent:
                 )
                 docs.append(doc)
 
-            return docs
+                # 5. Populate Graph and Dictionary
+                schema_graph.add_node(full_table_name, schema=schema)
+                schema_dict[full_table_name] = ddl_content
+                
+                if fks:
+                    for fk in fks:
+                        col_name_fk, f_schema, f_table, f_col = fk
+                        foreign_table = f"{f_schema}.{f_table}"
+                        # Directed Edge from Table A -> Table B (A references B)
+                        schema_graph.add_edge(full_table_name, foreign_table, key=col_name_fk)
+
+            return docs, schema_graph, schema_dict
 
         except Exception as e:
             logger.error(f"DB Error during DDL extraction: {e}")
-            return []
+            return [], nx.DiGraph(), {}
         finally:
             if conn: conn.close()
 
-    def build_index(self, documents):
+    def build_index(self, documents, schema_graph, schema_dict):
         if not documents:
             logger.warning("No documents to index. Skipping.")
             return
@@ -127,9 +141,16 @@ class SchemaIngestionAgent:
             persist_directory=VECTOR_DB_PATH
         )
         
-        logger.info(f"Schema index saved to '{VECTOR_DB_PATH}'")
+        # 4. Save Graph Topology and Dictionary
+        with open(os.path.join(VECTOR_DB_PATH, "schema_graph.json"), "w") as f:
+            json.dump(nx.node_link_data(schema_graph), f)
+            
+        with open(os.path.join(VECTOR_DB_PATH, "schema_dict.json"), "w") as f:
+            json.dump(schema_dict, f)
+            
+        logger.info(f"Schema Vector index, Graph topology, and Dictionary saved to '{VECTOR_DB_PATH}'")
 
 if __name__ == "__main__":
     agent = SchemaIngestionAgent(DB_CONFIG)
-    schema_docs = agent.extract_ddl()
-    agent.build_index(schema_docs)
+    schema_docs, schema_graph, schema_dict = agent.extract_ddl()
+    agent.build_index(schema_docs, schema_graph, schema_dict)

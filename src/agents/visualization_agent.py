@@ -102,6 +102,8 @@ CRITICAL: Match chart to question intent, not just data shape.
 - "spread/outliers/quartiles" + groups → box with x=group_column
 - "correlation/relationship" → scatter with color=category if available
 
+CRITICAL: You MUST ONLY select column names that EXACTLY match the 'Columns' list provided above. Do not invent columns.
+
 Reply with ONLY this JSON (no markdown, no explanation):
 {{"chart_type":"...","x":null,"y":null,"color":null,"size":null,"names":null,"values":null,"z":null,"path":null,"nbins":null,"barmode":null,"title":"Descriptive Title"}}"""
 
@@ -335,6 +337,10 @@ class VisualizationAgent:
         Takes a DataFrame and user question, returns a Plotly figure.
         Returns: (success: bool, fig: Figure|None, spec: dict|None)
         """
+        # --- Auto-merge common name columns for better visualization ---
+        if 'FirstName' in df.columns and 'LastName' in df.columns and 'FullName' not in df.columns:
+            df['FullName'] = df['FirstName'] + ' ' + df['LastName']
+            
         # --- Pre-populate data analysis ---
         col_info = "\n".join([
             f"  - {col}: {dtype}" for col, dtype in zip(df.columns, df.dtypes)

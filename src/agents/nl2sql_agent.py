@@ -2,6 +2,8 @@ import os
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
+import networkx as nx
+import json
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
@@ -26,20 +28,63 @@ class NL2SQLAgent:
             api_key=OPENROUTER_API_KEY,
             base_url=OPENROUTER_BASE_URL
         )
+        
+        # 3. Load Graph and DDL Dictionary
+        graph_path = os.path.join(VECTOR_DB_PATH, "schema_graph.json")
+        dict_path = os.path.join(VECTOR_DB_PATH, "schema_dict.json")
+        
+        try:
+            with open(graph_path, 'r') as f:
+                self.schema_graph = nx.node_link_graph(json.load(f))
+            with open(dict_path, 'r') as f:
+                self.schema_dict = json.load(f)
+        except Exception as e:
+            logger.warning(f"Graph/Dict not loaded. Falling back to simple RAG. Reason: {e}")
+            self.schema_graph = None
+            self.schema_dict = None
 
     def get_relevant_schema(self, question: str, k: int = 8) -> str:
         """
-        Retrieves the top K most relevant table definitions (DDL) from the Vector DB.
+        Retrieves the top K most relevant table definitions using GraphRAG.
         """
         logger.info(f"Looking up schema for: '{question}'...")
         results = self.vector_store.similarity_search(question, k=k)
         
-        # Combine the DDLs into one big string context
-        context = "\n\n".join([doc.page_content for doc in results])
+        seed_tables = [doc.metadata.get('table_name') for doc in results]
         
-        logger.debug(f"Retrieved {len(results)} DDL snippets")
-        table_names = [doc.metadata.get('table_name') for doc in results]
-        logger.info(f"Relevant tables: {table_names}")
+        if not self.schema_graph or not self.schema_dict:
+            context = "\n\n".join([doc.page_content for doc in results])
+            logger.info(f"Relevant tables (Fallback): {seed_tables}")
+            return context
+            
+        # Graph Traversal (2 Hops)
+        final_tables = set(seed_tables)
+        current_layer = set(seed_tables)
+        
+        for hop in range(2):
+            next_layer = set()
+            for node in current_layer:
+                if node and node in self.schema_graph:
+                    for neighbor in self.schema_graph.successors(node):
+                        if neighbor not in final_tables:
+                            next_layer.add(neighbor)
+                            final_tables.add(neighbor)
+                    for neighbor in self.schema_graph.predecessors(node):
+                        if neighbor not in final_tables:
+                            next_layer.add(neighbor)
+                            final_tables.add(neighbor)
+            current_layer = next_layer
+                    
+        # Compile final DDL context
+        context_lines = []
+        for table in final_tables:
+            if table in self.schema_dict:
+                context_lines.append(self.schema_dict[table])
+                
+        context = "\n\n".join(context_lines)
+        
+        logger.info(f"Seed tables: {seed_tables}")
+        logger.info(f"Graph-Expanded tables: {list(final_tables)}")
         
         return context
 
@@ -68,12 +113,13 @@ class NL2SQLAgent:
         ### USER QUESTION:
         {question}
         {correction_block}
-        ### INSTRUCTIONS:
-        1. Return ONLY the SQL query. Do not add markdown markers (like ```sql).
-        2. Use table aliases (e.g. 's' for SalesOrderHeader) to make it readable.
-        3. If you join tables, ensure the Foreign Keys match.
-        4. Do NOT make up columns. Use the schema provided.
-        5. CRITICAL: This database is Case-Sensitive.
+        IMPORTANT:
+        1. ONLY output the raw SQL query. Do not include markdown formatting (like ```sql), reasoning, or explanations.
+        2. Never query tables or columns that are not in the schema provided.
+        3. Always quote table and column names with double quotes to preserve casing (e.g., "Sales"."SalesOrderHeader").
+        4. If the question cannot be answered with the given schema, output: SELECT 'Error: Insufficient schema context' AS error;
+        5. Always prioritize resolving IDs to human-readable names (e.g., FirstName, LastName) by joining the appropriate tables (e.g., Person, Employee) if they are provided in context.
+        6. CRITICAL: This database is Case-Sensitive.
            - You MUST wrap ALL Schema, Table, and Column names in Double Quotes.
            - Use TWO-part identifiers ONLY: "SchemaName"."TableName"
            - NEVER use three-part identifiers. Do NOT prefix with "public" or a database name.

@@ -2,12 +2,12 @@ import psycopg2
 import pandas as pd
 from typing import TypedDict, Optional
 from langgraph.graph import StateGraph, END
-from langchain_ollama import ChatOllama
+from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 import re
 
-from config import DB_CONFIG, LLM_MODEL, get_logger
+from config import DB_CONFIG, LLM_MODEL, OPENROUTER_API_KEY, OPENROUTER_BASE_URL, get_logger
 
 logger = get_logger("agent.sql_execution")
 
@@ -143,7 +143,12 @@ def fix_query_node(state: ExecutionState):
     logger.info(f"Calling LLM to fix query (retry {retries + 1}/3)...")
     logger.debug(f"Error was: {error_msg[:150]}")
 
-    llm = ChatOllama(model=LLM_MODEL, temperature=0)
+    llm = ChatOpenAI(
+        model=LLM_MODEL, 
+        temperature=0,
+        api_key=OPENROUTER_API_KEY,
+        base_url=OPENROUTER_BASE_URL
+    )
     
     template = """
     You are a PostgreSQL Expert. 

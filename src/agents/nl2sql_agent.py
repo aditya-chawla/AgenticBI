@@ -27,7 +27,7 @@ class NL2SQLAgent:
             base_url=OPENROUTER_BASE_URL
         )
 
-    def get_relevant_schema(self, question: str, k: int = 3) -> str:
+    def get_relevant_schema(self, question: str, k: int = 8) -> str:
         """
         Retrieves the top K most relevant table definitions (DDL) from the Vector DB.
         """

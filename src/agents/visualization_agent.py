@@ -279,11 +279,47 @@ def build_figure(df: pd.DataFrame, spec: ChartSpec):
         "barmode": spec.barmode,
     }
 
+    # ---------------------------------------------------------
+    # UI/UX Enhancements before rendering
+    # ---------------------------------------------------------
+    
+    # Auto-convert dense vertical bar charts to horizontal
+    if spec.chart_type == "bar" and spec.x and spec.y and spec.x in df.columns and spec.y in df.columns:
+        # Check if the X-axis is categorical and has more than 10 unique values
+        if df[spec.x].nunique() > 10 and pd.api.types.is_numeric_dtype(df[spec.y]):
+            # Swap x and y arguments for a horizontal bar chart
+            old_x, old_y = param_map["x"], param_map["y"]
+            param_map["x"], param_map["y"] = old_y, old_x
+            
+            # Sort the dataframe so the largest values appear at the top
+            try:
+                df = df.sort_values(by=old_y, ascending=True)
+                kwargs["data_frame"] = df
+            except Exception as e:
+                logger.warning(f"Could not sort dataframe for horizontal bar chart: {e}")
+
     for param, value in param_map.items():
         if value is not None:
             kwargs[param] = value
 
     fig = fn(**kwargs)
+
+    # ---------------------------------------------------------
+    # UI/UX Enhancements after rendering
+    # ---------------------------------------------------------
+
+    # 1. Prevent overlapping axis labels by adding margins
+    fig.update_layout(
+        xaxis=dict(automargin=True),
+        yaxis=dict(automargin=True),
+        margin=dict(l=20, r=20, t=50, b=20)
+    )
+
+    # 2. Add visible labels and percentages to Pie charts
+    if spec.chart_type == "pie":
+        fig.update_traces(textinfo='label+percent', textposition='inside')
+        fig.update_layout(showlegend=True)
+
     return fig
 
 

@@ -55,6 +55,32 @@ class SchemaIngestionAgent:
                     ddl_lines.append(f"  {col_name} {dtype} {null_str},")
                 ddl_lines.append(");")
                 
+                # --- Append Foreign Keys ---
+                cur.execute(f"""
+                    SELECT
+                        kcu.column_name,
+                        ccu.table_schema AS foreign_table_schema,
+                        ccu.table_name AS foreign_table_name,
+                        ccu.column_name AS foreign_column_name
+                    FROM 
+                        information_schema.table_constraints AS tc 
+                        JOIN information_schema.key_column_usage AS kcu
+                          ON tc.constraint_name = kcu.constraint_name
+                          AND tc.table_schema = kcu.table_schema
+                        JOIN information_schema.constraint_column_usage AS ccu
+                          ON ccu.constraint_name = tc.constraint_name
+                          AND ccu.table_schema = tc.table_schema
+                    WHERE tc.constraint_type = 'FOREIGN KEY' 
+                        AND tc.table_schema = '{schema}'
+                        AND tc.table_name = '{table}';
+                """)
+                fks = cur.fetchall()
+                if fks:
+                    ddl_lines.append("\n-- Foreign Keys --")
+                    for fk in fks:
+                        col_name_fk, f_schema, f_table, f_col = fk
+                        ddl_lines.append(f"-- {col_name_fk} references {f_schema}.{f_table}({f_col})")
+
                 ddl_content = "\n".join(ddl_lines)
 
                 # 4. Create Document object
@@ -84,7 +110,12 @@ class SchemaIngestionAgent:
         
         # 1. Clear old index if it exists (so we don't get duplicates)
         if os.path.exists(VECTOR_DB_PATH):
-            shutil.rmtree(VECTOR_DB_PATH)
+            for item in os.listdir(VECTOR_DB_PATH):
+                item_path = os.path.join(VECTOR_DB_PATH, item)
+                if os.path.isfile(item_path):
+                    os.remove(item_path)
+                elif os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
 
         # 2. Initialize Free Local Embedding Model
         embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)

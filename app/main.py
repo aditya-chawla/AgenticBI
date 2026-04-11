@@ -450,22 +450,46 @@ def render_ui(store, filter_q, sort_by):
         chat_out = []
         for m in messages:
             is_user = m.get("role") == "user"
-            chat_out.append(
-                html.Div(
-                    html.Div(
-                        m.get("content", ""),
+            content = m.get("content", "")
+
+            # User messages: plain div; Assistant messages: dcc.Markdown for rich formatting
+            if is_user:
+                bubble = html.Div(
+                    content,
+                    style={
+                        "padding": "8px 12px",
+                        "borderRadius": "10px",
+                        "maxWidth": "88%",
+                        "whiteSpace": "pre-wrap",
+                        "fontSize": "13px",
+                        "lineHeight": "1.55",
+                        "fontFamily": FONT,
+                        "backgroundColor": BG_MSG_US,
+                        "color": TEXT,
+                    },
+                )
+            else:
+                bubble = html.Div(
+                    dcc.Markdown(
+                        content,
                         style={
-                            "padding": "8px 12px",
-                            "borderRadius": "10px",
-                            "maxWidth": "88%",
-                            "whiteSpace": "pre-wrap",
                             "fontSize": "13px",
                             "lineHeight": "1.55",
                             "fontFamily": FONT,
-                            "backgroundColor": BG_MSG_US if is_user else BG_MSG_AI,
                             "color": TEXT,
                         },
                     ),
+                    style={
+                        "padding": "8px 12px",
+                        "borderRadius": "10px",
+                        "maxWidth": "88%",
+                        "backgroundColor": BG_MSG_AI,
+                    },
+                )
+
+            chat_out.append(
+                html.Div(
+                    bubble,
                     style={
                         "display": "flex",
                         "justifyContent": "flex-end" if is_user else "flex-start",

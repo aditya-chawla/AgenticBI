@@ -20,6 +20,7 @@ from langgraph.graph import StateGraph, END
 from nl2sql_agent import NL2SQLAgent
 from sql_execution_agent import SQLExecutor
 from visualization_agent import VisualizationAgent
+from business_insights_agent import BusinessInsightsAgent
 from config import get_logger
 
 logger = get_logger("agent.orchestrator")
@@ -71,6 +72,9 @@ class OrchestratorState(TypedDict):
     error_message: Optional[str]
     retry_count: int
     stage: str                           # current pipeline stage
+
+    # --- Business Insights ---
+    insights_narrative: Optional[str]    # Markdown narrative from insights agent
 
 
 # ---------------------------------------------------------
@@ -248,8 +252,33 @@ def route_after_check(state: OrchestratorState) -> str:
 
 
 def route_after_visualize(state: OrchestratorState) -> str:
-    """After visualization: always proceed to END (partial success handled in .run())."""
-    return "done"
+    """After visualization: proceed to Business Insights generation."""
+    return "generate_insights"
+
+
+def generate_insights_node(state: OrchestratorState) -> dict:
+    """Call BusinessInsightsAgent to produce a narrative from the data."""
+    logger.info("=" * 60)
+    logger.info("STAGE: generate_insights")
+    logger.info("=" * 60)
+
+    if not state.get("result_dict"):
+        logger.warning("No result data available for insights generation")
+        return {"insights_narrative": None, "stage": "generate_insights"}
+
+    df = pd.DataFrame(state["result_dict"])
+    agent = BusinessInsightsAgent()
+
+    try:
+        narrative = agent.generate_narrative(df, state["user_question"])
+        if narrative:
+            logger.info("Insights narrative generated (%d chars)", len(narrative))
+        else:
+            logger.warning("Insights agent returned None — will fall back to raw table")
+        return {"insights_narrative": narrative, "stage": "generate_insights"}
+    except Exception as e:
+        logger.error("Insights agent crashed: %s", e)
+        return {"insights_narrative": None, "stage": "generate_insights"}
 
 
 # ---------------------------------------------------------
@@ -263,6 +292,7 @@ def _build_graph() -> StateGraph:
     workflow.add_node("execute_sql", execute_sql_node)
     workflow.add_node("check_execution", check_execution_node)
     workflow.add_node("visualize", visualize_node)
+    workflow.add_node("generate_insights", generate_insights_node)
 
     # Entry
     workflow.set_entry_point("generate_sql")
@@ -282,8 +312,10 @@ def _build_graph() -> StateGraph:
     })
 
     workflow.add_conditional_edges("visualize", route_after_visualize, {
-        "done": END,
+        "generate_insights": "generate_insights",
     })
+
+    workflow.add_edge("generate_insights", END)
 
     return workflow
 
@@ -334,6 +366,7 @@ class OrchestratorAgent:
             "error_message": None,
             "retry_count": 0,
             "stage": "init",
+            "insights_narrative": None,
         }
 
         final = self.graph.invoke(initial_state)
@@ -369,8 +402,17 @@ class OrchestratorAgent:
                 result["viz_failed"] = True
                 result["viz_error"] = final.get("error_message")
                 logger.warning("ORCHESTRATOR COMPLETE — partial success (viz failed)")
+
+            # Replace raw markdown table with Business Insights narrative
+            if final.get("insights_narrative"):
+                result["markdown"] = final["insights_narrative"]
+                logger.info("Using Business Insights narrative in place of raw table")
+            else:
+                logger.info("No insights narrative — keeping raw table as fallback")
         else:
             logger.error("ORCHESTRATOR COMPLETE — failed: %s", final.get("error_message"))
+
+        result["retry_count"] = final.get("retry_count", 0)
 
         return result
 

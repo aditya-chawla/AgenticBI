@@ -26,3 +26,6 @@ plotly
 pydantic
 pypdf
 python-dotenv
+
+# MCP (Model Context Protocol)
+mcp

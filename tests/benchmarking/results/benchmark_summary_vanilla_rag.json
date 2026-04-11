@@ -1,0 +1,107 @@
+{
+  "timestamp": "2026-04-11T08:32:29.011322",
+  "total_queries": 10,
+  "runs_per_query": 3,
+  "total_runs": 30,
+  "SESR": 83.3,
+  "VSR": 92.0,
+  "EESR": 76.7,
+  "CLE": 44.4,
+  "total_retried": 9,
+  "total_recovered": 4,
+  "latency_avg_seconds": 12.4,
+  "latency_min_seconds": 5.0,
+  "latency_max_seconds": 39.3,
+  "per_query": {
+    "1": {
+      "query": "Show me the top 10 best-selling products by total revenue.",
+      "sql_success_rate": "3/3",
+      "viz_success_rate": "3/3",
+      "e2e_success_rate": "3/3",
+      "avg_latency": 10.3,
+      "retried": 0,
+      "recovered": 0
+    },
+    "2": {
+      "query": "What is the total sales revenue by year and month?",
+      "sql_success_rate": "3/3",
+      "viz_success_rate": "3/3",
+      "e2e_success_rate": "3/3",
+      "avg_latency": 15.1,
+      "retried": 0,
+      "recovered": 0
+    },
+    "3": {
+      "query": "Show me the distribution of employees by marital status.",
+      "sql_success_rate": "3/3",
+      "viz_success_rate": "3/3",
+      "e2e_success_rate": "3/3",
+      "avg_latency": 7.5,
+      "retried": 0,
+      "recovered": 0
+    },
+    "4": {
+      "query": "What is the average sick leave hours by job title?",
+      "sql_success_rate": "3/3",
+      "viz_success_rate": "3/3",
+      "e2e_success_rate": "3/3",
+      "avg_latency": 11.4,
+      "retried": 1,
+      "recovered": 1
+    },
+    "5": {
+      "query": "Show me total sales amount by sales territory country.",
+      "sql_success_rate": "1/3",
+      "viz_success_rate": "1/3",
+      "e2e_success_rate": "1/3",
+      "avg_latency": 12.0,
+      "retried": 3,
+      "recovered": 1
+    },
+    "6": {
+      "query": "Which top 5 vendors do we spend the most money with?",
+      "sql_success_rate": "3/3",
+      "viz_success_rate": "3/3",
+      "e2e_success_rate": "3/3",
+      "avg_latency": 12.6,
+      "retried": 0,
+      "recovered": 0
+    },
+    "7": {
+      "query": "Show me the total inventory quantity grouped by product subc",
+      "sql_success_rate": "2/3",
+      "viz_success_rate": "2/3",
+      "e2e_success_rate": "2/3",
+      "avg_latency": 28.8,
+      "retried": 2,
+      "recovered": 1
+    },
+    "8": {
+      "query": "Compare the standard cost versus the list price for all prod",
+      "sql_success_rate": "3/3",
+      "viz_success_rate": "3/3",
+      "e2e_success_rate": "3/3",
+      "avg_latency": 10.5,
+      "retried": 0,
+      "recovered": 0
+    },
+    "9": {
+      "query": "Show me the number of orders placed online versus in-store.",
+      "sql_success_rate": "3/3",
+      "viz_success_rate": "1/3",
+      "e2e_success_rate": "1/3",
+      "avg_latency": 29.1,
+      "retried": 1,
+      "recovered": 1
+    },
+    "10": {
+      "query": "Who are the top 5 sales representatives by total sales, and ",
+      "sql_success_rate": "1/3",
+      "viz_success_rate": "1/3",
+      "e2e_success_rate": "1/3",
+      "avg_latency": 253.2,
+      "retried": 2,
+      "recovered": 0
+    }
+  }
+}

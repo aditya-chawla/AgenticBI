@@ -36,3 +36,48 @@ body, #react-entry-point, #_dash-app-content, .dash-renderer {
     margin: 0 !important;
     padding: 0 !important;
 }
+
+/* ── Responsive layout ─────────────────────────────────── */
+
+/* Default: horizontal layout */
+.main-layout {
+    display: flex;
+    flex-direction: row;
+}
+
+.chat-panel {
+    width: 38%;
+    min-width: 300px;
+    max-width: 500px;
+}
+
+/* Mobile: stack vertically */
+@media (max-width: 768px) {
+    .main-layout {
+        flex-direction: column !important;
+    }
+    .chat-panel {
+        width: 100% !important;
+        min-width: auto !important;
+        max-width: none !important;
+        height: 40% !important;
+        border-top: 1px solid #3c3c3c;
+    }
+}
+
+/* Chart card hover effect */
+.dash-graph {
+    transition: height 0.2s ease;
+}
+
+/* Suggested query chip hover */
+button[id*="suggested-query"]:hover {
+    background: #4a4a4a !important;
+}
+
+/* Action button hover */
+button[id*="delete-chart"]:hover,
+button[id*="expand-chart"]:hover,
+button[id*="download-chart"]:hover {
+    color: #ffffff !important;
+}

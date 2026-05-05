@@ -53,6 +53,7 @@ def _get_sql_executor() -> "SQLExecutor":
 class OrchestratorState(TypedDict):
     # --- Input ---
     user_question: str
+    conversation_history: Optional[list]  # Previous user questions for context
 
     # --- NL2SQL outputs ---
     sql_query: Optional[str]
@@ -348,13 +349,14 @@ class OrchestratorAgent:
     def __init__(self):
         self.graph = _build_graph().compile()
 
-    def run(self, question: str) -> dict:
+    def run(self, question: str, conversation_history: Optional[list] = None) -> dict:
         logger.info("=" * 70)
         logger.info("ORCHESTRATOR START — %s", question[:100])
         logger.info("=" * 70)
 
         initial_state: OrchestratorState = {
             "user_question": question,
+            "conversation_history": conversation_history or [],
             "sql_query": None,
             "correction_hint": None,
             "sql_success": None,

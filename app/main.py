@@ -4,13 +4,14 @@ Layout: chart dashboard (left ~62%) | chat (right ~38%), Cursor-style dark UI.
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 import uuid
 from typing import Literal
 
 import plotly.io as pio
-from dash import callback, dcc, html, Input, Output, State, no_update
+from dash import callback, dcc, html, Input, Output, State, no_update, ALL, callback_context
 import vizro.models as vm
 from vizro import Vizro
 
@@ -66,6 +67,17 @@ TEXT_DIM  = "#6a6a6a"
 RADIUS    = "6px"
 FONT      = "'Segoe UI', system-ui, -apple-system, sans-serif"
 
+# ---------------------------------------------------------
+# Suggested queries for empty state
+# ---------------------------------------------------------
+SUGGESTED_QUERIES = [
+    "Show total sales by region",
+    "Top 10 products by revenue",
+    "Sales trend over time",
+    "Employee vacation hours",
+    "Online vs in-store orders",
+]
+
 
 # ---------------------------------------------------------
 # Custom Vizro component
@@ -78,8 +90,21 @@ class AgenticBIPage(vm.VizroBaseModel):
 
         return html.Div(
             [
-                # ── Hidden state store ─────────────────────────
-                dcc.Store(id=f"{S}_store", data={"charts": [], "messages": []}),
+                # ── Hidden state store (local persistence) ───────
+                dcc.Store(
+                    id=f"{S}_store",
+                    data={"charts": [], "messages": [], "all_charts": []},
+                    storage_type="local",
+                ),
+
+                # ── Loading overlay ─────────────────────────────
+                dcc.Loading(
+                    id=f"{S}_loading",
+                    type="circle",
+                    color=ACCENT,
+                    children=html.Div(id=f"{S}_loading_target", style={"display": "none"}),
+                    style={"position": "absolute", "top": "50%", "left": "50%", "transform": "translate(-50%, -50%)"},
+                ),
 
                 # ── Main row: LEFT (charts) | RIGHT (chat) ─────
                 html.Div(
@@ -171,18 +196,38 @@ class AgenticBIPage(vm.VizroBaseModel):
                         # ═══ RIGHT PANEL — Chat ═══════════════════
                         html.Div(
                             [
-                                # Chat header
+                                # Chat header with clear button
                                 html.Div(
-                                    html.Span(
-                                        "CHAT",
-                                        style={
-                                            "fontSize": "11px",
-                                            "color": TEXT_DIM,
-                                            "letterSpacing": "1.5px",
-                                            "fontWeight": "600",
-                                        },
-                                    ),
+                                    [
+                                        html.Span(
+                                            "CHAT",
+                                            style={
+                                                "fontSize": "11px",
+                                                "color": TEXT_DIM,
+                                                "letterSpacing": "1.5px",
+                                                "fontWeight": "600",
+                                            },
+                                        ),
+                                        html.Button(
+                                            "Clear",
+                                            id=f"{S}_clear_btn",
+                                            n_clicks=0,
+                                            style={
+                                                "padding": "4px 10px",
+                                                "fontSize": "11px",
+                                                "fontFamily": FONT,
+                                                "background": "transparent",
+                                                "color": TEXT_DIM,
+                                                "border": BORDER,
+                                                "borderRadius": RADIUS,
+                                                "cursor": "pointer",
+                                                "marginLeft": "auto",
+                                            },
+                                        ),
+                                    ],
                                     style={
+                                        "display": "flex",
+                                        "alignItems": "center",
                                         "padding": "10px 14px",
                                         "borderBottom": BORDER,
                                         "flexShrink": "0",
@@ -211,6 +256,7 @@ class AgenticBIPage(vm.VizroBaseModel):
                                             placeholder="Ask anything about your data…",
                                             debounce=False,
                                             n_submit=0,
+                                            disabled=False,
                                             style={
                                                 "flex": "1",
                                                 "padding": "9px 12px",
@@ -228,6 +274,7 @@ class AgenticBIPage(vm.VizroBaseModel):
                                             "Send",
                                             id=f"{S}_send_btn",
                                             n_clicks=0,
+                                            disabled=False,
                                             style={
                                                 "padding": "9px 16px",
                                                 "fontSize": "13px",
@@ -252,6 +299,7 @@ class AgenticBIPage(vm.VizroBaseModel):
                                     },
                                 ),
                             ],
+                            className="chat-panel",
                             style={
                                 "width": "38%",
                                 "minWidth": "300px",
@@ -264,6 +312,7 @@ class AgenticBIPage(vm.VizroBaseModel):
                             },
                         ),
                     ],
+                    className="main-layout",
                     style={
                         "display": "flex",
                         "flex": "1",
@@ -299,6 +348,10 @@ vm.Page.add_type("components", AgenticBIPage)
 @callback(
     Output("agentic_bi_page_store", "data"),
     Output("agentic_bi_page_chat_input", "value"),
+    Output("agentic_bi_page_chat_input", "disabled"),
+    Output("agentic_bi_page_send_btn", "disabled"),
+    Output("agentic_bi_page_send_btn", "children"),
+    Output("agentic_bi_page_loading_target", "children"),
     Input("agentic_bi_page_send_btn", "n_clicks"),
     Input("agentic_bi_page_chat_input", "n_submit"),
     State("agentic_bi_page_chat_input", "value"),
@@ -307,14 +360,15 @@ vm.Page.add_type("components", AgenticBIPage)
 )
 def on_send(_clicks, _submit, user_text, store):
     if not user_text or not user_text.strip():
-        return no_update, no_update
+        return no_update, no_update, no_update, no_update, no_update, no_update
 
-    store    = store or {"charts": [], "messages": []}
+    store    = store or {"charts": [], "messages": [], "all_charts": []}
     charts   = list(store.get("charts", []))
+    all_charts = list(store.get("all_charts", []))
     messages = list(store.get("messages", []))
     question = user_text.strip()
 
-    messages.append({"role": "user", "content": question})
+    messages.append({"role": "user", "content": question, "timestamp": uuid.uuid4().hex[:8]})
 
     # Guardrails
     try:
@@ -324,23 +378,32 @@ def on_send(_clicks, _submit, user_text, store):
 
     if not allowed:
         messages.append({"role": "assistant", "content": deny_msg})
-        return {**store, "charts": charts, "messages": messages}, ""
+        return {**store, "charts": charts, "all_charts": all_charts, "messages": messages}, "", False, False, "Send", ""
+
+    # Build conversation history for context
+    history = [m["content"] for m in messages if m.get("role") == "user"]
 
     # Orchestrator
     try:
-        result = _orchestrator().run(question)
+        result = _orchestrator().run(question, conversation_history=history)
     except Exception as exc:
         messages.append({"role": "assistant", "content": f"Pipeline error: {exc}"})
-        return {**store, "charts": charts, "messages": messages}, ""
+        return {**store, "charts": charts, "all_charts": all_charts, "messages": messages}, "", False, False, "Send", ""
 
     if result.get("success") and result.get("figure") is not None:
         title = (result.get("chart_spec") or {}).get("title") or "Chart"
-        charts.insert(0, {
-            "id":          str(uuid.uuid4())[:8],
+        chart_id = str(uuid.uuid4())[:8]
+        chart_data = {
+            "id":          chart_id,
             "query":       question,
             "title":       title,
             "figure_json": result["figure"].to_json(),
-        })
+            "sql":         result.get("sql"),
+            "df_json":     result["df"].to_json(orient="records") if result.get("df") is not None else None,
+            "timestamp":   uuid.uuid4().hex[:8],
+        }
+        charts.insert(0, chart_data)
+        all_charts.insert(0, chart_data)
         reply = result.get("markdown") or f"Chart ready: **{title}**"
 
     elif result.get("success") and result.get("viz_failed"):
@@ -353,7 +416,43 @@ def on_send(_clicks, _submit, user_text, store):
         reply = result.get("error") or "Could not answer that. Try rephrasing."
 
     messages.append({"role": "assistant", "content": reply})
-    return {**store, "charts": charts, "messages": messages}, ""
+    return {**store, "charts": charts, "all_charts": all_charts, "messages": messages}, "", False, False, "Send", ""
+
+
+# ---------------------------------------------------------
+# Callback 1b — Clear chat
+# ---------------------------------------------------------
+@callback(
+    Output("agentic_bi_page_store", "data", allow_duplicate=True),
+    Input("agentic_bi_page_clear_btn", "n_clicks"),
+    State("agentic_bi_page_store", "data"),
+    prevent_initial_call=True,
+)
+def on_clear(_clicks, store):
+    store = store or {"charts": [], "messages": [], "all_charts": []}
+    return {**store, "charts": [], "messages": [], "all_charts": []}
+
+
+# ---------------------------------------------------------
+# Callback 1c — Delete chart
+# ---------------------------------------------------------
+@callback(
+    Output("agentic_bi_page_store", "data", allow_duplicate=True),
+    Input({"type": "delete-chart", "index": Input.ALL}, "n_clicks"),
+    State("agentic_bi_page_store", "data"),
+    prevent_initial_call=True,
+)
+def on_delete_chart(n_clicks, store):
+    if not n_clicks or not any(n_clicks):
+        return no_update
+    store = store or {"charts": [], "messages": [], "all_charts": []}
+    charts = list(store.get("charts", []))
+    all_charts = list(store.get("all_charts", []))
+    triggered = callback_context.triggered[0]["prop_id"].split(".")[0]
+    chart_id = json.loads(triggered)["index"]
+    charts = [c for c in charts if c.get("id") != chart_id]
+    all_charts = [c for c in all_charts if c.get("id") != chart_id]
+    return {**store, "charts": charts, "all_charts": all_charts}
 
 
 # ---------------------------------------------------------
@@ -367,7 +466,8 @@ def on_send(_clicks, _submit, user_text, store):
     Input("agentic_bi_page_sort_by", "value"),
 )
 def render_ui(store, filter_q, sort_by):
-    store    = store or {"charts": [], "messages": []}
+    store    = store or {"charts": [], "messages": [], "all_charts": []}
+    all_charts = list(store.get("all_charts", []))
     charts   = list(store.get("charts", []))
     messages = list(store.get("messages", []))
 
@@ -388,15 +488,73 @@ def render_ui(store, filter_q, sort_by):
 
     # ── Dashboard ───────────────────────────────────────
     if not charts:
+        if all_charts and fq:
+            # Charts exist but filter hides them
+            empty_msg = f'No charts match "{fq}". Try a different filter.'
+        else:
+            # Truly empty — show suggested queries
+            empty_msg = "Ask a question in the chat to generate charts."
         dash_out = [
             html.Div(
-                "Ask a question in the chat to generate charts.",
-                style={
-                    "color": TEXT_DIM,
-                    "fontSize": "13px",
-                    "padding": "32px 8px",
-                    "fontFamily": FONT,
-                },
+                [
+                    html.Div(
+                        empty_msg,
+                        style={
+                            "color": TEXT_DIM,
+                            "fontSize": "13px",
+                            "padding": "32px 8px 16px",
+                            "fontFamily": FONT,
+                        },
+                    ),
+                    html.Div(
+                        [
+                            html.Div(
+                                "Try asking:",
+                                style={
+                                    "color": TEXT_DIM,
+                                    "fontSize": "11px",
+                                    "marginBottom": "8px",
+                                    "fontFamily": FONT,
+                                },
+                            ),
+                            html.Div(
+                                [
+                                    html.Button(
+                                        q,
+                                        id={"type": "suggested-query", "index": i},
+                                        n_clicks=0,
+                                        style={
+                                            "padding": "6px 12px",
+                                            "fontSize": "12px",
+                                            "fontFamily": FONT,
+                                            "background": BG_INPUT,
+                                            "color": TEXT,
+                                            "border": BORDER,
+                                            "borderRadius": RADIUS,
+                                            "cursor": "pointer",
+                                            "margin": "4px",
+                                        },
+                                    )
+                                    for i, q in enumerate(SUGGESTED_QUERIES)
+                                ],
+                                style={"display": "flex", "flexWrap": "wrap"},
+                            ),
+                        ],
+                        style={"padding": "0 8px"},
+                    ),
+                ]
+                if not all_charts
+                else [
+                    html.Div(
+                        empty_msg,
+                        style={
+                            "color": TEXT_DIM,
+                            "fontSize": "13px",
+                            "padding": "32px 8px",
+                            "fontFamily": FONT,
+                        },
+                    )
+                ]
             )
         ]
     else:
@@ -404,26 +562,93 @@ def render_ui(store, filter_q, sort_by):
         for c in charts:
             try:
                 fig = pio.from_json(c["figure_json"])
+                chart_id = c.get("id", "")
                 dash_out.append(
                     html.Div(
                         [
                             html.Div(
                                 [
-                                    html.Span(
-                                        c.get("title") or "Chart",
-                                        style={"fontWeight": "600", "fontSize": "13px", "color": TEXT},
+                                    html.Div(
+                                        [
+                                            html.Span(
+                                                c.get("title") or "Chart",
+                                                style={"fontWeight": "600", "fontSize": "13px", "color": TEXT},
+                                            ),
+                                            html.Span(
+                                                c.get("query") or "",
+                                                style={"fontSize": "11px", "color": TEXT_DIM, "marginLeft": "10px"},
+                                            ),
+                                        ],
+                                        style={"display": "flex", "alignItems": "center"},
                                     ),
-                                    html.Span(
-                                        c.get("query") or "",
-                                        style={"fontSize": "11px", "color": TEXT_DIM, "marginLeft": "10px"},
+                                    html.Div(
+                                        [
+                                            html.Button(
+                                                "⛶",
+                                                id={"type": "expand-chart", "index": chart_id},
+                                                n_clicks=0,
+                                                title="Expand fullscreen",
+                                                style={
+                                                    "padding": "2px 6px",
+                                                    "fontSize": "14px",
+                                                    "background": "transparent",
+                                                    "color": TEXT_DIM,
+                                                    "border": "none",
+                                                    "cursor": "pointer",
+                                                },
+                                            ),
+                                            html.Button(
+                                                "⬇",
+                                                id={"type": "download-chart", "index": chart_id},
+                                                n_clicks=0,
+                                                title="Download as PNG",
+                                                style={
+                                                    "padding": "2px 6px",
+                                                    "fontSize": "14px",
+                                                    "background": "transparent",
+                                                    "color": TEXT_DIM,
+                                                    "border": "none",
+                                                    "cursor": "pointer",
+                                                },
+                                            ),
+                                            html.Button(
+                                                "✕",
+                                                id={"type": "delete-chart", "index": chart_id},
+                                                n_clicks=0,
+                                                title="Remove from dashboard",
+                                                style={
+                                                    "padding": "2px 6px",
+                                                    "fontSize": "14px",
+                                                    "background": "transparent",
+                                                    "color": TEXT_DIM,
+                                                    "border": "none",
+                                                    "cursor": "pointer",
+                                                },
+                                            ),
+                                        ],
+                                        style={"display": "flex", "gap": "4px"},
                                     ),
                                 ],
-                                style={"marginBottom": "8px", "fontFamily": FONT},
+                                style={
+                                    "display": "flex",
+                                    "justifyContent": "space-between",
+                                    "alignItems": "center",
+                                    "marginBottom": "8px",
+                                    "fontFamily": FONT,
+                                },
                             ),
                             dcc.Graph(
+                                id={"type": "chart-graph", "index": chart_id},
                                 figure=fig,
-                                config={"displayModeBar": True, "responsive": True},
-                                style={"height": "300px"},
+                                config={
+                                    "displayModeBar": True,
+                                    "responsive": True,
+                                    "toImageButtonOptions": {
+                                        "format": "png",
+                                        "filename": f"chart_{chart_id}",
+                                    },
+                                },
+                                style={"height": "300px", "minHeight": "200px"},
                             ),
                         ],
                         style={
@@ -442,8 +667,49 @@ def render_ui(store, filter_q, sort_by):
     if not messages:
         chat_out = [
             html.Div(
-                "Ask anything about your data…",
-                style={"color": TEXT_DIM, "fontSize": "13px", "fontFamily": FONT},
+                [
+                    html.Div(
+                        "👋 Welcome to AgenticBI",
+                        style={
+                            "color": TEXT,
+                            "fontSize": "15px",
+                            "fontWeight": "600",
+                            "marginBottom": "8px",
+                            "fontFamily": FONT,
+                        },
+                    ),
+                    html.Div(
+                        "Ask anything about your data and I'll generate charts and insights.",
+                        style={"color": TEXT_DIM, "fontSize": "13px", "fontFamily": FONT, "marginBottom": "12px"},
+                    ),
+                    html.Div(
+                        "Try asking:",
+                        style={"color": TEXT_DIM, "fontSize": "11px", "marginBottom": "8px", "fontFamily": FONT},
+                    ),
+                    html.Div(
+                        [
+                            html.Button(
+                                q,
+                                id={"type": "suggested-query-chat", "index": i},
+                                n_clicks=0,
+                                style={
+                                    "padding": "6px 12px",
+                                    "fontSize": "12px",
+                                    "fontFamily": FONT,
+                                    "background": BG_INPUT,
+                                    "color": TEXT,
+                                    "border": BORDER,
+                                    "borderRadius": RADIUS,
+                                    "cursor": "pointer",
+                                    "margin": "4px",
+                                },
+                            )
+                            for i, q in enumerate(SUGGESTED_QUERIES)
+                        ],
+                        style={"display": "flex", "flexWrap": "wrap"},
+                    ),
+                ],
+                style={"padding": "8px 0"},
             )
         ]
     else:
@@ -498,6 +764,24 @@ def render_ui(store, filter_q, sort_by):
             )
 
     return dash_out, chat_out
+
+
+# ---------------------------------------------------------
+# Callback 3 — Suggested query chips → fill input
+# ---------------------------------------------------------
+@callback(
+    Output("agentic_bi_page_chat_input", "value", allow_duplicate=True),
+    Input({"type": "suggested-query", "index": Input.ALL}, "n_clicks"),
+    Input({"type": "suggested-query-chat", "index": Input.ALL}, "n_clicks"),
+    prevent_initial_call=True,
+)
+def on_suggested_query(n_clicks_dashboard, n_clicks_chat):
+    ctx = callback_context
+    if not ctx.triggered:
+        return no_update
+    triggered = ctx.triggered[0]["prop_id"].split(".")[0]
+    idx = json.loads(triggered)["index"]
+    return SUGGESTED_QUERIES[idx]
 
 
 # ---------------------------------------------------------

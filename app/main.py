@@ -14,7 +14,7 @@ from typing import Literal
 
 import plotly.graph_objects as go
 import plotly.io as pio
-from dash import callback, dcc, html, Input, Output, State, no_update, ALL, MATCH, callback_context, clientside_callback
+from dash import callback, dcc, html, Input, Output, State, no_update, ALL, MATCH, callback_context, clientside_callback, Patch
 import vizro.models as vm
 from vizro import Vizro
 
@@ -378,9 +378,13 @@ class AgenticBIPage(vm.VizroBaseModel):
                 # ── Hidden state store (local persistence) ───────
                 dcc.Store(
                     id=f"{S}_store",
-                    data={"charts": [], "messages": [], "all_charts": []},
+                    data={"charts": [], "messages": [], "all_charts": [], "saved_queries": []},
                     storage_type="local",
                 ),
+
+                # ── CSV download sink — server callback writes here, the
+                #    browser turns it into a file download.
+                dcc.Download(id=f"{S}_csv_download"),
 
                 # ── Live-progress poll: ticks while a pipeline is running so
                 #    chips and Run-button text update mid-stream. Dormant
@@ -595,6 +599,24 @@ class AgenticBIPage(vm.VizroBaseModel):
                         "overflow": "hidden",
                     },
                 ),
+
+                # ── Undo toast container — slides up from bottom-center
+                #    when a chart is soft-deleted. Both children are
+                #    permanent so their callbacks bind at app-build time;
+                #    render_ui controls visibility via className + text.
+                html.Div(
+                    [
+                        html.Span(id=f"{S}_undo_text", className="undo-text"),
+                        html.Button(
+                            "Undo",
+                            id=f"{S}_undo_delete",
+                            n_clicks=0,
+                            className="undo-btn",
+                        ),
+                    ],
+                    id=f"{S}_undo_toast",
+                    className="undo-toast hidden",
+                ),
             ],
             id=self.id,
             style={
@@ -635,11 +657,12 @@ vm.Page.add_type("components", AgenticBIPage)
     Input("agentic_bi_page_chat_input", "n_submit"),
     Input({"type": "suggested-query", "index": ALL}, "n_clicks"),
     Input({"type": "suggested-query-chat", "index": ALL}, "n_clicks"),
+    Input({"type": "saved-query", "index": ALL}, "n_clicks"),
     State("agentic_bi_page_chat_input", "value"),
     State("agentic_bi_page_store", "data"),
     prevent_initial_call=True,
 )
-def on_send(_clicks, _submit, _suggested_dashboard, _suggested_chat, user_text, store):
+def on_send(_clicks, _submit, _suggested_dashboard, _suggested_chat, _saved, user_text, store):
     # Pattern-matching ALL inputs fire spuriously during initial page
     # hydration with all n_clicks=0/None. Reject those: only proceed if at
     # least one of the actual click/submit signals carries a positive value.
@@ -647,7 +670,8 @@ def on_send(_clicks, _submit, _suggested_dashboard, _suggested_chat, user_text, 
     has_submit    = bool(_submit)
     has_dash_chip = any(c for c in (_suggested_dashboard or []) if c)
     has_chat_chip = any(c for c in (_suggested_chat or []) if c)
-    if not (has_run_click or has_submit or has_dash_chip or has_chat_chip):
+    has_saved     = any(c for c in (_saved or []) if c)
+    if not (has_run_click or has_submit or has_dash_chip or has_chat_chip or has_saved):
         return no_update, no_update, no_update, no_update, no_update, no_update
 
     ctx = callback_context
@@ -657,8 +681,16 @@ def on_send(_clicks, _submit, _suggested_dashboard, _suggested_chat, user_text, 
     if triggered.startswith("{"):
         try:
             trigger_id = json.loads(triggered)
-            if trigger_id.get("type") in {"suggested-query", "suggested-query-chat"}:
+            ttype = trigger_id.get("type")
+            if ttype in {"suggested-query", "suggested-query-chat"}:
                 question = SUGGESTED_QUERIES[int(trigger_id["index"])]
+            elif ttype == "saved-query":
+                # The button's id index is the position in saved_queries; the
+                # store still has the source-of-truth list.
+                saved_qs = (store or {}).get("saved_queries", [])
+                idx = int(trigger_id["index"])
+                if 0 <= idx < len(saved_qs):
+                    question = saved_qs[idx]
         except Exception:
             question = ""
     else:
@@ -667,7 +699,7 @@ def on_send(_clicks, _submit, _suggested_dashboard, _suggested_chat, user_text, 
     if not question:
         return no_update, no_update, no_update, no_update, no_update, no_update
 
-    store    = store or {"charts": [], "messages": [], "all_charts": []}
+    store    = store or {"charts": [], "messages": [], "all_charts": [], "saved_queries": []}
     charts   = list(store.get("charts", []))
     all_charts = list(store.get("all_charts", []))
     messages = list(store.get("messages", []))
@@ -820,7 +852,7 @@ def on_send(_clicks, _submit, _suggested_dashboard, _suggested_chat, user_text, 
     prevent_initial_call=True,
 )
 def on_clear(_clicks, store):
-    store = store or {"charts": [], "messages": [], "all_charts": []}
+    store = store or {"charts": [], "messages": [], "all_charts": [], "saved_queries": []}
     return {**store, "charts": [], "messages": [], "all_charts": []}
 
 
@@ -836,14 +868,288 @@ def on_clear(_clicks, store):
 def on_delete_chart(n_clicks, store):
     if not n_clicks or not any(n_clicks):
         return no_update
-    store = store or {"charts": [], "messages": [], "all_charts": []}
+    store = store or {"charts": [], "messages": [], "all_charts": [], "saved_queries": []}
     charts = list(store.get("charts", []))
     all_charts = list(store.get("all_charts", []))
     triggered = callback_context.triggered[0]["prop_id"].split(".")[0]
     chart_id = json.loads(triggered)["index"]
+
+    # Capture the chart and its position(s) for a 5-second undo window.
+    target = next((c for c in charts if c.get("id") == chart_id), None) or \
+             next((c for c in all_charts if c.get("id") == chart_id), None)
+    if target is None:
+        return no_update
+    charts_idx = next((i for i, c in enumerate(charts) if c.get("id") == chart_id), -1)
+    all_idx = next((i for i, c in enumerate(all_charts) if c.get("id") == chart_id), -1)
+
+    import time as _time
+    pending_delete = {
+        "chart": target,
+        "charts_index": charts_idx,
+        "all_index": all_idx,
+        "expires_at": _time.time() + 5,
+    }
+
     charts = [c for c in charts if c.get("id") != chart_id]
     all_charts = [c for c in all_charts if c.get("id") != chart_id]
-    return {**store, "charts": charts, "all_charts": all_charts}
+    return {
+        **store,
+        "charts": charts,
+        "all_charts": all_charts,
+        "pending_delete": pending_delete,
+    }
+
+
+# ---------------------------------------------------------
+# Callback 1g — Undo a recent delete (within the 5s window)
+# ---------------------------------------------------------
+@callback(
+    Output("agentic_bi_page_store", "data", allow_duplicate=True),
+    Input("agentic_bi_page_undo_delete", "n_clicks"),
+    State("agentic_bi_page_store", "data"),
+    prevent_initial_call=True,
+)
+def on_undo_delete(_clicks, store):
+    if not _clicks:
+        return no_update
+    store = store or {}
+    pd_state = store.get("pending_delete")
+    if not pd_state:
+        return no_update
+
+    chart = pd_state.get("chart")
+    if not chart:
+        return no_update
+
+    # Patch the only fields we care about so a concurrent prune / pin / star
+    # write can't clobber the restored chart with a stale State snapshot.
+    charts_idx = max(0, pd_state.get("charts_index", 0))
+    all_idx = max(0, pd_state.get("all_index", 0))
+    patched = Patch()
+    patched["charts"].insert(charts_idx, chart)
+    patched["all_charts"].insert(all_idx, chart)
+    patched["pending_delete"] = None
+    return patched
+
+
+# ---------------------------------------------------------
+# Callback 1h — Periodic prune of expired pending_delete
+# ---------------------------------------------------------
+@callback(
+    Output("agentic_bi_page_store", "data", allow_duplicate=True),
+    Input("agentic_bi_page_progress_tick", "n_intervals"),
+    State("agentic_bi_page_store", "data"),
+    prevent_initial_call=True,
+)
+def prune_pending_delete(_n, store):
+    # Use Patch so we only touch the pending_delete field — otherwise a stale
+    # State snapshot from this 600ms-tick callback can race with on_undo_delete
+    # and clobber the just-restored charts list.
+    if not store:
+        return no_update
+    pd_state = store.get("pending_delete")
+    if not pd_state:
+        return no_update
+    import time as _time
+    if _time.time() < pd_state.get("expires_at", 0):
+        return no_update
+    patched = Patch()
+    patched["pending_delete"] = None
+    return patched
+
+
+# ---------------------------------------------------------
+# Callback 1d — Toggle star on a chart card → add/remove from saved_queries
+# ---------------------------------------------------------
+@callback(
+    Output("agentic_bi_page_store", "data", allow_duplicate=True),
+    Input({"type": "star-chart", "index": ALL}, "n_clicks"),
+    State("agentic_bi_page_store", "data"),
+    prevent_initial_call=True,
+)
+def on_toggle_star(n_clicks, store):
+    if not n_clicks or not any(c for c in (n_clicks or []) if c):
+        return no_update
+    store = store or {"charts": [], "messages": [], "all_charts": [], "saved_queries": []}
+    triggered = callback_context.triggered[0]["prop_id"].split(".")[0]
+    try:
+        chart_id = json.loads(triggered)["index"]
+    except Exception:
+        return no_update
+
+    # Find the chart's question (search both visible and historical lists)
+    target_q = None
+    for c in store.get("all_charts", []) + store.get("charts", []):
+        if c.get("id") == chart_id:
+            target_q = (c.get("query") or "").strip()
+            break
+    if not target_q:
+        return no_update
+
+    saved = list(store.get("saved_queries", []))
+    if target_q.lower() in {q.lower() for q in saved}:
+        saved = [q for q in saved if q.lower() != target_q.lower()]
+    else:
+        saved.insert(0, target_q)
+    return {**store, "saved_queries": saved}
+
+
+# ---------------------------------------------------------
+# Callback 1f — Toggle pin on a chart card → sticky at top of dashboard
+# ---------------------------------------------------------
+@callback(
+    Output("agentic_bi_page_store", "data", allow_duplicate=True),
+    Input({"type": "pin-chart", "index": ALL}, "n_clicks"),
+    State("agentic_bi_page_store", "data"),
+    prevent_initial_call=True,
+)
+def on_toggle_pin(n_clicks, store):
+    if not n_clicks or not any(c for c in (n_clicks or []) if c):
+        return no_update
+    store = store or {"charts": [], "messages": [], "all_charts": [], "saved_queries": []}
+    triggered = callback_context.triggered[0]["prop_id"].split(".")[0]
+    try:
+        chart_id = json.loads(triggered)["index"]
+    except Exception:
+        return no_update
+
+    def _toggle(lst):
+        out = []
+        for c in lst:
+            if c.get("id") == chart_id:
+                c = {**c, "pinned": not c.get("pinned")}
+            out.append(c)
+        return out
+
+    return {
+        **store,
+        "charts": _toggle(store.get("charts", [])),
+        "all_charts": _toggle(store.get("all_charts", [])),
+    }
+
+
+# ---------------------------------------------------------
+# Callback 1e — Remove a question from the saved-queries rail
+# ---------------------------------------------------------
+@callback(
+    Output("agentic_bi_page_store", "data", allow_duplicate=True),
+    Input({"type": "saved-remove", "index": ALL}, "n_clicks"),
+    State("agentic_bi_page_store", "data"),
+    prevent_initial_call=True,
+)
+def on_remove_saved(n_clicks, store):
+    if not n_clicks or not any(c for c in (n_clicks or []) if c):
+        return no_update
+    store = store or {"charts": [], "messages": [], "all_charts": [], "saved_queries": []}
+    triggered = callback_context.triggered[0]["prop_id"].split(".")[0]
+    try:
+        idx = int(json.loads(triggered)["index"])
+    except Exception:
+        return no_update
+    saved = list(store.get("saved_queries", []))
+    if 0 <= idx < len(saved):
+        saved.pop(idx)
+    return {**store, "saved_queries": saved}
+
+
+# ---------------------------------------------------------
+# Callback 1i — Download chart data as CSV
+# ---------------------------------------------------------
+@callback(
+    Output("agentic_bi_page_csv_download", "data"),
+    Input({"type": "export-csv", "index": ALL}, "n_clicks"),
+    State("agentic_bi_page_store", "data"),
+    prevent_initial_call=True,
+)
+def on_export_csv(n_clicks, store):
+    if not n_clicks or not any(c for c in (n_clicks or []) if c):
+        return no_update
+    triggered = callback_context.triggered[0]["prop_id"].split(".")[0]
+    try:
+        chart_id = json.loads(triggered)["index"]
+    except Exception:
+        return no_update
+
+    store = store or {}
+    chart = next(
+        (c for c in (store.get("all_charts", []) or []) + (store.get("charts", []) or [])
+         if c.get("id") == chart_id),
+        None,
+    )
+    if not chart or not chart.get("df_json"):
+        return no_update
+
+    try:
+        records = json.loads(chart["df_json"])
+    except Exception:
+        return no_update
+    if not records:
+        return no_update
+
+    import io as _io
+    import csv as _csv
+    columns = list(records[0].keys())
+    buf = _io.StringIO()
+    writer = _csv.DictWriter(buf, fieldnames=columns, extrasaction="ignore")
+    writer.writeheader()
+    writer.writerows(records)
+
+    safe_title = "".join(ch if ch.isalnum() or ch in "-_ " else "_" for ch in (chart.get("title") or "chart")).strip().replace(" ", "_")
+    filename = f"{safe_title or 'chart'}.csv"
+    return {"content": buf.getvalue(), "filename": filename, "type": "text/csv"}
+
+
+# ---------------------------------------------------------
+# Callback 1j — Download chart as PNG via Plotly's client-side API
+# ---------------------------------------------------------
+clientside_callback(
+    """
+    function(n_clicks_list) {
+        if (!n_clicks_list || !n_clicks_list.some(c => c)) {
+            return window.dash_clientside.no_update;
+        }
+        const ctx = window.dash_clientside.callback_context;
+        const trig = ctx.triggered && ctx.triggered[0];
+        if (!trig || !trig.value) return window.dash_clientside.no_update;
+        let chartId;
+        try { chartId = JSON.parse(trig.prop_id.split('.')[0]).index; }
+        catch (e) { return window.dash_clientside.no_update; }
+
+        // The chart graph wrapper is the Plotly node whose id encodes the
+        // matching index. We find it by scanning all .js-plotly-plot nodes
+        // and matching their parent id (Dash assigns id={"type":"chart-graph","index":...}).
+        const all = document.querySelectorAll('.js-plotly-plot');
+        let target = null;
+        all.forEach(node => {
+            // Walk up to find the Dash component wrapper id
+            let p = node;
+            while (p && p.id !== '' && !p.id.includes('chart-graph')) {
+                p = p.parentElement;
+            }
+            if (p && p.id && p.id.includes('"index":"' + chartId + '"')) {
+                target = node;
+            }
+        });
+        if (!target) {
+            // Fallback: just take the most-recently rendered Plotly node
+            target = all[all.length - 1] || null;
+        }
+        if (target && window.Plotly) {
+            const safe = chartId.replace(/[^a-zA-Z0-9_-]/g, '_');
+            window.Plotly.downloadImage(target, {
+                format: 'png',
+                filename: 'chart_' + safe,
+                width: target.clientWidth || 1200,
+                height: target.clientHeight || 600,
+            });
+        }
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("agentic_bi_page_csv_download", "data", allow_duplicate=True),
+    Input({"type": "export-png", "index": ALL}, "n_clicks"),
+    prevent_initial_call=True,
+)
 
 
 # ---------------------------------------------------------
@@ -854,13 +1160,15 @@ def on_delete_chart(n_clicks, store):
     Output("agentic_bi_page_chat_messages", "children"),
     Output("agentic_bi_page_workspace_badge", "children"),
     Output("agentic_bi_page_workspace_badge", "className"),
+    Output("agentic_bi_page_undo_text", "children"),
+    Output("agentic_bi_page_undo_toast", "className"),
     Input("agentic_bi_page_store", "data"),
     Input("agentic_bi_page_filter_query", "value"),
     Input("agentic_bi_page_sort_by", "value"),
     Input("agentic_bi_page_run_completed_tick", "data"),
 )
 def render_ui(store, filter_q, sort_by, _completed_tick):
-    store    = store or {"charts": [], "messages": [], "all_charts": []}
+    store    = store or {"charts": [], "messages": [], "all_charts": [], "saved_queries": []}
     all_charts = list(store.get("all_charts", []))
     charts   = list(store.get("charts", []))
     messages = list(store.get("messages", []))
@@ -883,11 +1191,14 @@ def render_ui(store, filter_q, sort_by, _completed_tick):
             or fq in (c.get("title") or "").lower()
         ]
 
-    # Sort
+    # Sort by chosen order, then stable-partition pinned charts to the top.
     if sort_by == "az":
         charts = sorted(charts, key=lambda c: (c.get("title") or "").lower())
     elif sort_by == "za":
         charts = sorted(charts, key=lambda c: (c.get("title") or "").lower(), reverse=True)
+    pinned = [c for c in charts if c.get("pinned")]
+    unpinned = [c for c in charts if not c.get("pinned")]
+    charts = pinned + unpinned
 
     # Single live status row: chart count + last-run summary. Replaces the
     # previous 4-up KPI grid (which mixed counters with an event card).
@@ -978,6 +1289,7 @@ def render_ui(store, filter_q, sort_by, _completed_tick):
                 )
             ]
     else:
+        saved_set = {q.lower() for q in store.get("saved_queries", [])}
         chart_cards = []
         for i, c in enumerate(charts):
             try:
@@ -991,6 +1303,8 @@ def render_ui(store, filter_q, sort_by, _completed_tick):
                 if row_count is None:
                     row_count = len(records)
                 chart_type = (c.get("chart_type") or "chart").replace("_", " ").title()
+                question_text = c.get("query") or ""
+                is_saved = question_text.lower() in saved_set
                 chart_cards.append(
                     html.Div(
                         [
@@ -1003,7 +1317,7 @@ def render_ui(store, filter_q, sort_by, _completed_tick):
                                                 [
                                                     html.Span(chart_type, className="chart-meta-label"),
                                                     html.Span(f"{row_count} rows", className="chart-meta-label neutral"),
-                                                    html.Span(c.get("query") or "", className="chart-meta-query"),
+                                                    html.Span(question_text, className="chart-meta-query"),
                                                 ],
                                                 className="chart-meta",
                                             ),
@@ -1012,6 +1326,34 @@ def render_ui(store, filter_q, sort_by, _completed_tick):
                                     ),
                                     html.Div(
                                         [
+                                            html.Button(
+                                                "★" if is_saved else "☆",
+                                                id={"type": "star-chart", "index": chart_id},
+                                                n_clicks=0,
+                                                title="Remove from saved" if is_saved else "Save question",
+                                                className=f"chart-action-button star{' is-saved' if is_saved else ''}",
+                                            ),
+                                            html.Button(
+                                                "📌" if c.get("pinned") else "📍",
+                                                id={"type": "pin-chart", "index": chart_id},
+                                                n_clicks=0,
+                                                title="Unpin from top" if c.get("pinned") else "Pin to top",
+                                                className=f"chart-action-button pin{' is-pinned' if c.get('pinned') else ''}",
+                                            ),
+                                            html.Button(
+                                                "CSV",
+                                                id={"type": "export-csv", "index": chart_id},
+                                                n_clicks=0,
+                                                title="Download rows as CSV",
+                                                className="chart-action-button text-button",
+                                            ),
+                                            html.Button(
+                                                "PNG",
+                                                id={"type": "export-png", "index": chart_id},
+                                                n_clicks=0,
+                                                title="Download chart as PNG",
+                                                className="chart-action-button text-button",
+                                            ),
                                             html.Button(
                                                 "✕",
                                                 id={"type": "delete-chart", "index": chart_id},
@@ -1064,12 +1406,58 @@ def render_ui(store, filter_q, sort_by, _completed_tick):
                                 className="chart-drawers",
                             ),
                         ],
-                        className="chart-card featured-chart-card" if featured else "chart-card",
+                        className=" ".join(filter(None, [
+                            "chart-card",
+                            "featured-chart-card" if featured else "",
+                            "pinned-chart" if c.get("pinned") else "",
+                        ])),
                     )
                 )
             except Exception:
                 pass
         dash_out = [kpi_strip, html.Div(chart_cards, className="chart-grid")]
+
+    # ── Saved questions section (above memos) ────────────
+    saved_queries = store.get("saved_queries", []) or []
+    saved_panel = None
+    if saved_queries:
+        saved_chips = []
+        for i, q in enumerate(saved_queries):
+            label = q if len(q) <= 60 else q[:57].rstrip() + "…"
+            saved_chips.append(
+                html.Div(
+                    [
+                        html.Button(
+                            label,
+                            id={"type": "saved-query", "index": i},
+                            n_clicks=0,
+                            title=f"Re-run · {q}",
+                            className="saved-chip",
+                        ),
+                        html.Button(
+                            "✕",
+                            id={"type": "saved-remove", "index": i},
+                            n_clicks=0,
+                            title="Remove from saved",
+                            className="saved-chip-remove",
+                        ),
+                    ],
+                    className="saved-chip-wrap",
+                )
+            )
+        saved_panel = html.Div(
+            [
+                html.Div(
+                    [
+                        html.Span(f"SAVED · {len(saved_queries)}", className="saved-eyebrow"),
+                        html.Span("click to re-run", className="saved-hint"),
+                    ],
+                    className="saved-header",
+                ),
+                html.Div(saved_chips, className="saved-list"),
+            ],
+            className="saved-panel",
+        )
 
     # ── Chat messages ────────────────────────────────────
     if not messages:
@@ -1180,6 +1568,10 @@ def render_ui(store, filter_q, sort_by, _completed_tick):
 
             chat_out.append(card)
 
+    # Prepend the saved-queries panel above memos / welcome.
+    if saved_panel is not None:
+        chat_out = [saved_panel] + chat_out
+
     # Workspace badge — reflects connection + most recent run state
     info = _workspace_info()
     if not info["connected"]:
@@ -1192,7 +1584,19 @@ def render_ui(store, filter_q, sort_by, _completed_tick):
         badge_text = "Connected"
         badge_class = "status-pill ok"
 
-    return dash_out, chat_out, badge_text, badge_class
+    # Undo toast — visible only while pending_delete exists and hasn't expired.
+    pd_state = store.get("pending_delete")
+    toast_text = no_update
+    toast_class = "undo-toast hidden"
+    if pd_state:
+        import time as _time
+        if _time.time() < pd_state.get("expires_at", 0):
+            chart = pd_state.get("chart") or {}
+            title = chart.get("title") or "chart"
+            toast_text = [html.Strong(title), " removed."]
+            toast_class = "undo-toast"
+
+    return dash_out, chat_out, badge_text, badge_class, toast_text, toast_class
 
 
 # ---------------------------------------------------------

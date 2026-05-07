@@ -110,7 +110,27 @@ def execute_sql_node(state: ExecutionState):
         conn = psycopg2.connect(**DB_CONFIG)
         # Using pandas to easily get column names and formatting
         df = pd.read_sql(query, conn)
-        
+
+        # NL2SQL emits `SELECT 'Error: …' AS error;` when it cannot answer the
+        # question. The query is valid SQL and "succeeds", but downstream agents
+        # would treat the sentinel row as data. Catch it here and route through
+        # the failure path so the orchestrator's correction loop can react.
+        if (
+            len(df) == 1
+            and len(df.columns) == 1
+            and df.columns[0].lower() == "error"
+            and isinstance(df.iloc[0, 0], str)
+            and df.iloc[0, 0].lstrip().lower().startswith("error:")
+        ):
+            sentinel_msg = df.iloc[0, 0]
+            logger.warning("NL2SQL emitted error sentinel: %s", sentinel_msg)
+            return {
+                "error_message": sentinel_msg,
+                "result_data": None,
+                "result_dict": None,
+                "retry_count": current_retries,
+            }
+
         # If successful, clear errors and save data
         logger.info(f"SQL executed successfully — {len(df)} rows returned")
         return {

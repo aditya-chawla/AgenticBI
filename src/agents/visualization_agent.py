@@ -1,4 +1,5 @@
 import json
+import re
 import pandas as pd
 from typing import TypedDict, Optional
 from pydantic import BaseModel, Field
@@ -12,6 +13,60 @@ import plotly.io as pio
 from config import LLM_MODEL, OPENROUTER_API_KEY, OPENROUTER_BASE_URL, get_logger
 
 logger = get_logger("agent.visualization")
+
+# ---------------------------------------------------------
+# Label / formatting helpers
+# ---------------------------------------------------------
+_CURRENCY_HINTS = (
+    "revenue", "sales", "cost", "price", "amount", "spend", "spending",
+    "profit", "margin", "income", "expense", "value", "total",
+)
+_DATE_PART_HINTS = ("year", "month", "day", "quarter", "week", "yr", "mo")
+_COUNT_HINTS = ("count", "rows", "qty", "quantity", "num_", "_num")
+
+_CAMEL_BOUNDARY = re.compile(r"(?<!^)(?=[A-Z])")
+
+
+def humanize(name: str) -> str:
+    """`TotalSalesRevenue` → `Total Sales Revenue`, `total_sales` → `Total Sales`."""
+    if not name:
+        return name
+    spaced = _CAMEL_BOUNDARY.sub(" ", name).replace("_", " ")
+    return " ".join(w.capitalize() for w in spaced.split())
+
+
+def is_currency_col(col: str) -> bool:
+    if not col:
+        return False
+    low = col.lower()
+    if any(h in low for h in _COUNT_HINTS):
+        return False
+    return any(h in low for h in _CURRENCY_HINTS)
+
+
+def is_date_part_col(col: str) -> bool:
+    if not col:
+        return False
+    low = col.lower()
+    return any(h == low or low.endswith(h) or low.startswith(h) for h in _DATE_PART_HINTS)
+
+
+def coerce_int_like_floats(df: pd.DataFrame) -> pd.DataFrame:
+    """Postgres EXTRACT() and similar return numeric → pandas float64. Coerce
+    2024.0 → 2024 for any column whose floats are all integer-valued. Returns
+    a new DataFrame; the input is not mutated."""
+    out = df.copy()
+    for col in out.columns:
+        if pd.api.types.is_float_dtype(out[col]):
+            non_null = out[col].dropna()
+            if len(non_null) == 0:
+                continue
+            try:
+                if (non_null == non_null.astype(int)).all():
+                    out[col] = out[col].astype("Int64")
+            except (ValueError, OverflowError):
+                pass
+    return out
 
 # ---------------------------------------------------------
 # CONFIGURATION
@@ -304,6 +359,17 @@ def build_figure(df: pd.DataFrame, spec: ChartSpec):
         if value is not None:
             kwargs[param] = value
 
+    # Humanize column names used as axis titles, legend headers, hover labels.
+    # Append " ($)" to currency-flavoured columns so the unit is visible.
+    label_map: dict[str, str] = {}
+    for col in df.columns:
+        pretty = humanize(col)
+        if is_currency_col(col):
+            pretty = f"{pretty} ($)"
+        label_map[col] = pretty
+    if label_map:
+        kwargs["labels"] = label_map
+
     fig = fn(**kwargs)
 
     # ---------------------------------------------------------
@@ -317,7 +383,27 @@ def build_figure(df: pd.DataFrame, spec: ChartSpec):
         margin=dict(l=20, r=20, t=50, b=20)
     )
 
-    # 2. Add visible labels and percentages to Pie charts
+    # 2. Currency-flavoured axes get $ tickprefix and SI-suffix tickformat
+    #    (e.g. 30k → $30k, 1.2M → $1.2M).
+    x_used = kwargs.get("x")
+    y_used = kwargs.get("y")
+    if isinstance(y_used, str) and is_currency_col(y_used):
+        fig.update_yaxes(tickprefix="$", tickformat="~s")
+    if isinstance(x_used, str) and is_currency_col(x_used):
+        fig.update_xaxes(tickprefix="$", tickformat="~s")
+
+    # 3. Force integer-valued numeric axes to render without decimals.
+    for axis_col, axis_setter in ((x_used, fig.update_xaxes), (y_used, fig.update_yaxes)):
+        if isinstance(axis_col, str) and axis_col in df.columns:
+            series = df[axis_col]
+            if pd.api.types.is_integer_dtype(series) or (
+                pd.api.types.is_float_dtype(series)
+                and len(series.dropna()) > 0
+                and (series.dropna() == series.dropna().astype(int)).all()
+            ):
+                axis_setter(tickformat="d")
+
+    # 4. Add visible labels and percentages to Pie charts
     if spec.chart_type == "pie":
         fig.update_traces(textinfo='label+percent', textposition='inside')
         fig.update_layout(showlegend=True)
@@ -337,10 +423,18 @@ class VisualizationAgent:
         Takes a DataFrame and user question, returns a Plotly figure.
         Returns: (success: bool, fig: Figure|None, spec: dict|None)
         """
+        # Work on a copy so we never mutate the caller's frame
+        df = df.copy()
+
+        # Coerce float columns whose values are all integer-valued (Postgres
+        # EXTRACT() returns numeric → 2024.0 rather than 2024). Run before
+        # FullName synth so we don't accidentally widen string columns.
+        df = coerce_int_like_floats(df)
+
         # --- Auto-merge common name columns for better visualization ---
         if 'FirstName' in df.columns and 'LastName' in df.columns and 'FullName' not in df.columns:
-            df['FullName'] = df['FirstName'] + ' ' + df['LastName']
-            
+            df['FullName'] = df['FirstName'].astype(str) + ' ' + df['LastName'].astype(str)
+
         # --- Pre-populate data analysis ---
         col_info = "\n".join([
             f"  - {col}: {dtype}" for col, dtype in zip(df.columns, df.dtypes)

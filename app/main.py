@@ -241,6 +241,40 @@ def _workspace_info() -> dict:
     return info
 
 
+_WORKSPACE_TREE_CACHE: dict | None = None
+
+
+def _workspace_schema_tree(max_per_schema: int = 8) -> dict:
+    """Map of schema → list of table names. Cached for the process lifetime;
+    feeds the schema-preview panel in the right rail so users can craft
+    questions without guessing what's available."""
+    global _WORKSPACE_TREE_CACHE
+    if _WORKSPACE_TREE_CACHE is not None:
+        return _WORKSPACE_TREE_CACHE
+
+    tree: dict = {}
+    try:
+        import psycopg2
+        from config import DB_CONFIG
+        conn = psycopg2.connect(connect_timeout=2, **DB_CONFIG)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT table_schema, table_name FROM information_schema.tables "
+                    "WHERE table_schema NOT IN ('pg_catalog', 'information_schema') "
+                    "ORDER BY table_schema, table_name"
+                )
+                for schema, table in cur.fetchall():
+                    tree.setdefault(schema, []).append(table)
+        finally:
+            conn.close()
+    except Exception:
+        tree = {}
+
+    _WORKSPACE_TREE_CACHE = tree
+    return tree
+
+
 def _created_label() -> str:
     return datetime.now().strftime("%b %d, %I:%M %p").replace(" 0", " ")
 
@@ -617,6 +651,26 @@ class AgenticBIPage(vm.VizroBaseModel):
                     id=f"{S}_undo_toast",
                     className="undo-toast hidden",
                 ),
+
+                # ── Notice toast — shown when a duplicate question is
+                #    resubmitted; the action button scrolls the canvas to
+                #    the existing chart card.
+                html.Div(
+                    [
+                        html.Span(id=f"{S}_notice_text", className="notice-text"),
+                        html.Button(
+                            "Open chart",
+                            id=f"{S}_notice_action",
+                            n_clicks=0,
+                            className="notice-btn",
+                        ),
+                    ],
+                    id=f"{S}_notice_toast",
+                    className="notice-toast hidden",
+                ),
+                # Hidden field that holds the chart_id the notice action should
+                # scroll to — read by a clientside callback when the button fires.
+                dcc.Store(id=f"{S}_notice_target", data=None),
             ],
             id=self.id,
             style={
@@ -703,6 +757,25 @@ def on_send(_clicks, _submit, _suggested_dashboard, _suggested_chat, _saved, use
     charts   = list(store.get("charts", []))
     all_charts = list(store.get("all_charts", []))
     messages = list(store.get("messages", []))
+
+    # Duplicate detection — if the same question already has a chart on the
+    # canvas, surface a notice toast pointing at it instead of running the
+    # pipeline again. The user can still re-run by clearing or asking a fresh
+    # question; this just prevents the canvas filling with identical cards.
+    norm_q = question.strip().lower()
+    existing = next(
+        (c for c in charts if (c.get("query") or "").strip().lower() == norm_q),
+        None,
+    )
+    if existing:
+        import time as _time
+        patched = Patch()
+        patched["notice"] = {
+            "message": "You already have this chart on the canvas.",
+            "chart_id": existing.get("id"),
+            "expires_at": _time.time() + 6,
+        }
+        return patched, "", False, False, "Run", ""
 
     messages.append({"role": "user", "content": question, "timestamp": uuid.uuid4().hex[:8]})
 
@@ -942,19 +1015,26 @@ def on_undo_delete(_clicks, store):
     prevent_initial_call=True,
 )
 def prune_pending_delete(_n, store):
-    # Use Patch so we only touch the pending_delete field — otherwise a stale
-    # State snapshot from this 600ms-tick callback can race with on_undo_delete
-    # and clobber the just-restored charts list.
+    # Use Patch so we only touch the pending_delete / notice fields —
+    # otherwise a stale State snapshot from this 600ms-tick callback can race
+    # with on_undo_delete and clobber the just-restored charts list.
     if not store:
         return no_update
-    pd_state = store.get("pending_delete")
-    if not pd_state:
-        return no_update
     import time as _time
-    if _time.time() < pd_state.get("expires_at", 0):
+    now = _time.time()
+    pd_state = store.get("pending_delete")
+    notice = store.get("notice")
+
+    pd_expired = pd_state and now >= pd_state.get("expires_at", 0)
+    notice_expired = notice and now >= notice.get("expires_at", 0)
+    if not (pd_expired or notice_expired):
         return no_update
+
     patched = Patch()
-    patched["pending_delete"] = None
+    if pd_expired:
+        patched["pending_delete"] = None
+    if notice_expired:
+        patched["notice"] = None
     return patched
 
 
@@ -1162,6 +1242,9 @@ clientside_callback(
     Output("agentic_bi_page_workspace_badge", "className"),
     Output("agentic_bi_page_undo_text", "children"),
     Output("agentic_bi_page_undo_toast", "className"),
+    Output("agentic_bi_page_notice_text", "children"),
+    Output("agentic_bi_page_notice_toast", "className"),
+    Output("agentic_bi_page_notice_target", "data"),
     Input("agentic_bi_page_store", "data"),
     Input("agentic_bi_page_filter_query", "value"),
     Input("agentic_bi_page_sort_by", "value"),
@@ -1459,6 +1542,47 @@ def render_ui(store, filter_q, sort_by, _completed_tick):
             className="saved-panel",
         )
 
+    # ── Schema preview — collapsible per-schema list of tables ───────
+    schema_panel = None
+    schema_tree = _workspace_schema_tree()
+    if schema_tree:
+        schema_sections = []
+        for schema_name, tables in schema_tree.items():
+            shown = tables[:8]
+            more = len(tables) - len(shown)
+            schema_sections.append(
+                html.Details(
+                    [
+                        html.Summary(
+                            [
+                                html.Span(schema_name, className="schema-name"),
+                                html.Span(str(len(tables)), className="schema-count"),
+                            ],
+                            className="schema-summary",
+                        ),
+                        html.Div(
+                            [html.Span(t, className="schema-table") for t in shown]
+                            + ([html.Span(f"+ {more} more", className="schema-table more")] if more > 0 else []),
+                            className="schema-tables",
+                        ),
+                    ],
+                    className="schema-section",
+                )
+            )
+        schema_panel = html.Div(
+            [
+                html.Div(
+                    [
+                        html.Span("SCHEMA", className="schema-eyebrow"),
+                        html.Span("AdventureWorks", className="schema-hint"),
+                    ],
+                    className="schema-header",
+                ),
+                html.Div(schema_sections, className="schema-list"),
+            ],
+            className="schema-panel",
+        )
+
     # ── Chat messages ────────────────────────────────────
     if not messages:
         chat_out = [
@@ -1571,6 +1695,10 @@ def render_ui(store, filter_q, sort_by, _completed_tick):
     # Prepend the saved-queries panel above memos / welcome.
     if saved_panel is not None:
         chat_out = [saved_panel] + chat_out
+    if schema_panel is not None:
+        # Schema preview goes at the bottom — fills the dead space below the
+        # memo trail without competing with the memos themselves for attention.
+        chat_out = chat_out + [schema_panel]
 
     # Workspace badge — reflects connection + most recent run state
     info = _workspace_info()
@@ -1596,7 +1724,23 @@ def render_ui(store, filter_q, sort_by, _completed_tick):
             toast_text = [html.Strong(title), " removed."]
             toast_class = "undo-toast"
 
-    return dash_out, chat_out, badge_text, badge_class, toast_text, toast_class
+    # Notice toast — surfaces duplicate-detection result. Distinct from undo.
+    notice = store.get("notice")
+    notice_text = no_update
+    notice_class = "notice-toast hidden"
+    notice_target = no_update
+    if notice:
+        import time as _time
+        if _time.time() < notice.get("expires_at", 0):
+            notice_text = notice.get("message") or ""
+            notice_class = "notice-toast"
+            notice_target = notice.get("chart_id")
+
+    return (
+        dash_out, chat_out, badge_text, badge_class,
+        toast_text, toast_class,
+        notice_text, notice_class, notice_target,
+    )
 
 
 # ---------------------------------------------------------
@@ -1675,8 +1819,70 @@ clientside_callback(
     prevent_initial_call=True,
 )
 
+# 2.5) Notice action — scroll the existing duplicate chart into view.
+clientside_callback(
+    """
+    function(_n, target) {
+        if (!_n || !target) return window.dash_clientside.no_update;
+        const sel = '[id*="\\\\\"chart-graph\\\\\"\\\\,\\\\\"index\\\\\":\\\\\"' + target + '\\\\\"]';
+        // Simpler: find Plotly graph wrappers, match by id substring
+        const all = document.querySelectorAll('[id*="chart-graph"]');
+        let target_node = null;
+        all.forEach(n => {
+            if (n.id && n.id.indexOf('"index":"' + target + '"') !== -1) {
+                target_node = n;
+            }
+        });
+        const card = target_node ? target_node.closest('.chart-card') : null;
+        if (card) {
+            card.scrollIntoView({behavior: 'smooth', block: 'center'});
+            card.classList.add('flash-pulse');
+            setTimeout(() => card.classList.remove('flash-pulse'), 1500);
+        }
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("agentic_bi_page_notice_target", "data", allow_duplicate=True),
+    Input("agentic_bi_page_notice_action", "n_clicks"),
+    State("agentic_bi_page_notice_target", "data"),
+    prevent_initial_call=True,
+)
+
+
 # 3) Keyboard shortcut: pressing "/" anywhere outside an input focuses the
 #    question box. Registered once via a module-scoped guard.
+# 2.7) Skeleton shimmer — when the chips container has any .running chip,
+#      add `is-pipeline-running` to the dashboard div. CSS draws a shimmering
+#      placeholder card at the top so the canvas reflects the in-flight run.
+clientside_callback(
+    """
+    function() {
+        if (window.__agenticbi_skeleton_observer) return window.dash_clientside.no_update;
+        window.__agenticbi_skeleton_observer = true;
+        const start = setInterval(function() {
+            const chips = document.getElementById('agentic_bi_page_progress_chips');
+            const dash = document.getElementById('agentic_bi_page_dashboard');
+            if (!chips || !dash) return;
+            clearInterval(start);
+            const update = function() {
+                const running = chips.querySelector('.step-chip.running') !== null;
+                dash.classList.toggle('is-pipeline-running', running);
+            };
+            new MutationObserver(update).observe(chips, {
+                childList: true, subtree: true, attributes: true,
+                attributeFilter: ['class']
+            });
+            update();
+        }, 60);
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("agentic_bi_page_progress_chips", "style"),
+    Input("agentic_bi_page_store", "data"),
+    prevent_initial_call=False,
+)
+
+
 clientside_callback(
     """
     function(_data) {

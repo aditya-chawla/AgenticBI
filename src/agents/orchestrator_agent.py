@@ -349,12 +349,9 @@ class OrchestratorAgent:
     def __init__(self):
         self.graph = _build_graph().compile()
 
-    def run(self, question: str, conversation_history: Optional[list] = None) -> dict:
-        logger.info("=" * 70)
-        logger.info("ORCHESTRATOR START — %s", question[:100])
-        logger.info("=" * 70)
-
-        initial_state: OrchestratorState = {
+    @staticmethod
+    def _initial_state(question: str, conversation_history: Optional[list]) -> "OrchestratorState":
+        return {
             "user_question": question,
             "conversation_history": conversation_history or [],
             "sql_query": None,
@@ -371,9 +368,40 @@ class OrchestratorAgent:
             "insights_narrative": None,
         }
 
-        final = self.graph.invoke(initial_state)
+    def run_streaming(self, question: str, conversation_history: Optional[list] = None):
+        """
+        Generator variant of `run`. Yields ('node_name', state_snapshot) tuples
+        as each LangGraph node completes; returns the final result dict via
+        StopIteration.value (i.e. assigned from `value = yield from gen()`).
 
-        # --- Build result dict ---
+        Use when the caller wants to surface per-stage progress in real time.
+        """
+        logger.info("=" * 70)
+        logger.info("ORCHESTRATOR STREAM — %s", question[:100])
+        logger.info("=" * 70)
+
+        # stream_mode="updates" yields {node_name: state_delta} after each node;
+        # we accumulate into final_state so we can build the result dict at end.
+        final_state: dict = dict(self._initial_state(question, conversation_history))
+        for chunk in self.graph.stream(self._initial_state(question, conversation_history),
+                                       stream_mode="updates"):
+            for node_name, state_delta in chunk.items():
+                if isinstance(state_delta, dict):
+                    final_state.update(state_delta)
+                yield node_name, final_state
+
+        return self._build_result(final_state)
+
+    def run(self, question: str, conversation_history: Optional[list] = None) -> dict:
+        logger.info("=" * 70)
+        logger.info("ORCHESTRATOR START — %s", question[:100])
+        logger.info("=" * 70)
+
+        final = self.graph.invoke(self._initial_state(question, conversation_history))
+        return self._build_result(final)
+
+    def _build_result(self, final: dict) -> dict:
+        # --- Build result dict (shared between run() and run_streaming()) ---
         result = {
             "success": False,
             "sql": final.get("sql_query"),

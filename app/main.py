@@ -338,12 +338,10 @@ def _polish_figure(fig, title: str, featured: bool = False):
         linecolor="rgba(148,163,184,0.20)",
         tickfont={"color": "#9aa7b5"},
     )
-    palette = ["#6aa0ff", "#4fd1a5", "#f2b84b", "#ff8a7a", "#9aa6ff", "#5fd3f3", "#c6d04f", "#a8b3bf"]
     for trace_index, trace in enumerate(fig.data):
         if getattr(trace, "type", "") == "bar":
             trace.update(
                 marker={
-                    "color": palette[trace_index % len(palette)],
                     "line": {"width": 0},
                     "opacity": 0.9,
                 },
@@ -351,14 +349,13 @@ def _polish_figure(fig, title: str, featured: bool = False):
             )
         elif getattr(trace, "type", "") in {"pie", "funnelarea"}:
             trace.update(
-                marker={"colors": palette},
                 textfont={"color": "#f5f7fa"},
                 hovertemplate="<b>%{label}</b><br>%{value}<extra></extra>",
             )
         elif getattr(trace, "type", "") == "scatter":
             trace.update(
-                line={"color": palette[0], "width": 3},
-                marker={"color": palette[1], "size": 8, "line": {"width": 0}},
+                line={"width": 3},
+                marker={"size": 8, "line": {"width": 0}},
                 hovertemplate="<b>%{x}</b><br>%{y}<extra></extra>",
             )
     return fig
@@ -640,18 +637,13 @@ vm.Page.add_type("components", AgenticBIPage)
     prevent_initial_call=True,
 )
 def on_send(_clicks, _submit, _suggested_dashboard, _suggested_chat, user_text, store):
-    # Pattern-matching ALL inputs fire spuriously during initial page
-    # hydration with all n_clicks=0/None. Reject those: only proceed if at
-    # least one of the actual click/submit signals carries a positive value.
-    has_run_click = bool(_clicks)
-    has_submit    = bool(_submit)
-    has_dash_chip = any(c for c in (_suggested_dashboard or []) if c)
-    has_chat_chip = any(c for c in (_suggested_chat or []) if c)
-    if not (has_run_click or has_submit or has_dash_chip or has_chat_chip):
+    ctx = callback_context
+    
+    # Abort if the callback was fired by a component simply being added to the DOM (value is None)
+    if not ctx.triggered or ctx.triggered[0].get("value") is None:
         return no_update, no_update, no_update, no_update, no_update, no_update
 
-    ctx = callback_context
-    triggered = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
+    triggered = ctx.triggered[0]["prop_id"].split(".")[0]
     question = ""
 
     if triggered.startswith("{"):

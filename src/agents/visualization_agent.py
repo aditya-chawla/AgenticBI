@@ -228,9 +228,10 @@ Reply with ONLY this JSON (no markdown, no explanation):
 
         # Fix treemap/pie quirk: LLM wraps single column name in a list
         # e.g. "values": ["GDP_Billion"] → "values": "GDP_Billion"
+        # Also handles cases where LLM returns multiple columns but Pydantic expects one string.
         for field in ('names', 'values', 'x', 'y', 'z', 'color', 'size'):
             val = parsed.get(field)
-            if isinstance(val, list) and len(val) == 1 and isinstance(val[0], str):
+            if isinstance(val, list) and len(val) >= 1 and isinstance(val[0], str):
                 parsed[field] = val[0]
 
         # Fix pie quirk: LLM puts literal data values instead of column name

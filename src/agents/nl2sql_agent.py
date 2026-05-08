@@ -129,6 +129,10 @@ class NL2SQLAgent:
            - Incorrect: "public"."Sales"."SalesOrderHeader"   ← NEVER do this
            - Incorrect: "database"."Schema"."Table"           ← NEVER do this
            - The schemas in this database are: Sales, HumanResources, Production, Purchasing, Person.
+        7. CRITICAL: The columns "LineTotal" and "TotalDue" are NULL in this database. Do NOT use them directly.
+           - Instead of "TotalDue" in SalesOrderHeader, compute it using ("SubTotal" + "TaxAmt" + "Freight").
+           - Instead of "LineTotal" in PurchaseOrderDetail or SalesOrderDetail, compute it using ("OrderQty" * "UnitPrice").
+        8. Do NOT pivot results into multiple columns for categories (e.g., do not use CASE WHEN to create separate columns for "Online" vs "InStore"). Return the data in a "long" format (one column for the category, one column for the value) so it can be easily plotted.
         
         ### SQL QUERY:
         """

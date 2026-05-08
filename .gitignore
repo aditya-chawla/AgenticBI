@@ -40,3 +40,10 @@ test_output/
 
 # Docker
 pgdata/
+
+# Local Postgres fallback runtime
+.local_postgres_data/
+.local_postgres.log
+
+# Dash background-callback DiskcacheManager (unused after revert to threading)
+.dash_bg_cache/

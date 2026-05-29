@@ -1,16 +1,11 @@
 /*
-  Hide the Vizro default header bar (dashboard title + theme toggle row)
-  and the page-level title heading so only our custom component shows.
+  AgenticBI desktop presentation shell.
+  The product should read as an analyst cockpit: quiet, premium, and data-first.
 */
 
-/* Vizro top nav bar (contains dashboard title + theme toggle) */
 #header,
 nav.navbar,
-.navbar {
-    display: none !important;
-}
-
-/* Vizro page title heading (the second "Agentic BI") */
+.navbar,
 .page-header,
 h1.heading-1,
 h2.heading-2,
@@ -20,7 +15,6 @@ h2.heading-3,
     display: none !important;
 }
 
-/* Remove the padding/margin Vizro adds around the page area */
 .page-main,
 .tab-content,
 .page-content,
@@ -29,10 +23,1616 @@ main {
     margin: 0 !important;
 }
 
-/* Make the root Dash container full height with no overflow */
-body, #react-entry-point, #_dash-app-content, .dash-renderer {
+body,
+#react-entry-point,
+#_dash-app-content,
+.dash-renderer {
     height: 100vh !important;
     overflow: hidden !important;
     margin: 0 !important;
     padding: 0 !important;
+    background: #0f1115 !important;
+    color: #e5e7eb;
+    font-family: Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+button,
+input {
+    font-family: inherit;
+}
+
+/* Dash wraps every dcc.Input in a .dash-input-container div. The inner
+   <input> has class .dash-input-element, display: inline-block, and defaults
+   to HTML size=20 (~173px). Scope overrides per context. */
+
+/* Command bar input — stretch to fill */
+.command-box .dash-input-container,
+.command-box .dash-input {
+    width: 100% !important;
+    max-width: 100% !important;
+}
+.command-box input.dash-input-element {
+    width: 100% !important;
+    display: block !important;
+    box-sizing: border-box !important;
+}
+
+/* Filter input — constrained width, align with header row */
+.panel-header .filter-input.dash-input-container,
+.panel-header .filter-input.dash-input {
+    width: 220px !important;
+    max-width: 220px !important;
+    flex-shrink: 0;
+}
+.panel-header .filter-input input.dash-input-element {
+    width: 100% !important;
+    display: block !important;
+    box-sizing: border-box !important;
+}
+
+.main-layout {
+    display: flex;
+    flex-direction: row;
+    background: #0f1115;
+}
+
+.chat-panel {
+    width: 390px !important;
+    min-width: 360px !important;
+    max-width: 430px !important;
+    border-left: 1px solid #242b35;
+    background: #15181d !important;
+}
+
+.command-bar {
+    display: grid;
+    grid-template-columns: minmax(220px, 0.6fr) minmax(560px, 2fr);
+    gap: 22px;
+    align-items: center;
+    padding: 12px 18px;
+    border-bottom: 1px solid #252c36;
+    background: linear-gradient(180deg, #171b22 0%, #12161c 100%);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+    transition: background 200ms ease;
+}
+
+.brand-block {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.app-title {
+    color: #f5f7fa;
+    font-size: 20px;
+    font-weight: 780;
+    line-height: 1.1;
+}
+
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px 3px 7px;
+    border: 1px solid rgba(79, 209, 165, 0.28);
+    border-radius: 999px;
+    background: rgba(79, 209, 165, 0.08);
+    color: #72e0bb;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.7px;
+    text-transform: uppercase;
+    white-space: nowrap;
+    transition: border-color 220ms ease, background 220ms ease, color 220ms ease;
+}
+.status-pill::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: currentColor;
+    box-shadow: 0 0 0 3px rgba(79, 209, 165, 0.15);
+}
+.status-pill.ok    { border-color: rgba(79, 209, 165, 0.32); background: rgba(79, 209, 165, 0.10); color: #72e0bb; }
+.status-pill.ok::before    { box-shadow: 0 0 0 3px rgba(79, 209, 165, 0.18); }
+.status-pill.warn  { border-color: rgba(242, 145, 75, 0.40); background: rgba(242, 145, 75, 0.10); color: #f4b07a; }
+.status-pill.warn::before  { box-shadow: 0 0 0 3px rgba(242, 145, 75, 0.18); }
+.status-pill.err   { border-color: rgba(255, 100, 110, 0.42); background: rgba(255, 100, 110, 0.10); color: #ff8e96; }
+.status-pill.err::before   { box-shadow: 0 0 0 3px rgba(255, 100, 110, 0.18); }
+
+.command-box {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto 90px;
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid #343d49;
+    border-radius: 10px;
+    background: #1a2028;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.015), 0 14px 30px rgba(0, 0, 0, 0.22);
+    transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+.command-box:focus-within {
+    border-color: rgba(79, 140, 255, 0.55);
+    box-shadow: 0 0 0 1px rgba(79, 140, 255, 0.22), 0 14px 30px rgba(0, 0, 0, 0.30);
+}
+
+.kbd-hint {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 8px;
+    padding: 3px 8px;
+    border: 1px solid #343d49;
+    border-radius: 6px;
+    background: #131820;
+    color: #8e99a8;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.04em;
+    pointer-events: none;
+    user-select: none;
+    transition: opacity 180ms ease;
+}
+.command-box:focus-within .kbd-hint { opacity: 0; }
+
+.command-input {
+    min-width: 0;
+    width: 100%;
+    height: 44px;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: #eef2f7;
+    font-size: 14px;
+    overflow: hidden;
+}
+
+/* Dash wraps dcc.Input in a .dash-input-container div — the actual <input>
+   lives inside as .dash-input-element and needs to fill the wrapper. */
+.command-input .dash-input-element {
+    width: 100% !important;
+    height: 100%;
+    padding: 0 14px;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: #eef2f7;
+    font-size: 14px;
+    box-sizing: border-box;
+}
+
+.command-input::placeholder,
+.command-input .dash-input-element::placeholder,
+.filter-input::placeholder {
+    color: #687484;
+}
+
+.command-input:focus-within {
+    box-shadow: inset 0 -1px 0 #4f8cff;
+}
+
+.command-input .dash-input-element:focus {
+    outline: none;
+}
+
+.command-button {
+    height: 44px;
+    border: 0;
+    border-left: 1px solid rgba(255, 255, 255, 0.06);
+    background: #4f8cff;
+    color: #ffffff;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 760;
+}
+
+.command-button:hover {
+    background: #6aa0ff;
+}
+
+.command-button:disabled {
+    cursor: progress;
+    background: linear-gradient(90deg, #385b9b, #4f8cff, #385b9b);
+    background-size: 180% 100%;
+    color: #ffffff;
+    animation: command-pulse 1.25s ease-in-out infinite;
+}
+
+@keyframes command-pulse {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+.progress-steps {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    position: relative;
+}
+
+.step-chip,
+.progress-steps span {
+    padding: 4px 8px;
+    border: 1px solid #303946;
+    border-radius: 999px;
+    background: #171c23;
+    color: #8e99a8;
+    font-size: 10.5px;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    transition: border-color 220ms ease, background 220ms ease, color 220ms ease;
+}
+
+/* The chip representing the stage currently in flight pulses blue. Real
+   per-stage progress now drives this — when a node finishes the next chip
+   gets `.running`, when the run ends all completed chips snap to green. */
+.step-chip.running {
+    border-color: rgba(79, 140, 255, 0.55);
+    color: #d6e6ff;
+    background: rgba(79, 140, 255, 0.16);
+    animation: chip-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes chip-pulse {
+    0%, 100% {
+        background: rgba(79, 140, 255, 0.10);
+        box-shadow: inset 0 0 0 1px rgba(79, 140, 255, 0.10);
+    }
+    50% {
+        background: rgba(79, 140, 255, 0.28);
+        box-shadow: inset 0 0 0 1px rgba(79, 140, 255, 0.36),
+                    0 0 12px rgba(79, 140, 255, 0.32);
+    }
+}
+
+/* Brief sweep across all chips while the worker spins up — bridges the gap
+   between user-click and the first set_progress update from the worker. */
+.progress-steps.is-running .step-chip:not(.running):not(.completed):not(.failed) {
+    border-color: rgba(79, 140, 255, 0.22);
+    color: #aac2ee;
+    background: rgba(79, 140, 255, 0.05);
+}
+
+.step-chip.active {
+    border-color: rgba(79, 140, 255, 0.42);
+    background: rgba(79, 140, 255, 0.12);
+    color: #b9d0ff;
+    box-shadow: inset 0 0 0 1px rgba(79, 140, 255, 0.08);
+}
+
+/* Stage chip shows green once that stage of the most recent run completed. */
+.step-chip.completed {
+    border-color: rgba(79, 209, 165, 0.45);
+    background: rgba(79, 209, 165, 0.14);
+    color: #b8f0d6;
+    box-shadow: inset 0 0 0 1px rgba(79, 209, 165, 0.08);
+}
+
+/* Stage chip shows amber when that stage failed in the most recent run. */
+.step-chip.failed {
+    border-color: rgba(242, 145, 75, 0.46);
+    background: rgba(242, 145, 75, 0.14);
+    color: #f6c89a;
+    box-shadow: inset 0 0 0 1px rgba(242, 145, 75, 0.08);
+}
+
+.panel-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 62px;
+    padding: 12px 18px;
+    border-bottom: 1px solid #242b35;
+    background: #12161c;
+    flex-shrink: 0;
+}
+
+.panel-title-block {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    min-width: 0;
+    margin-right: auto;
+}
+
+.panel-eyebrow {
+    color: #a1acba;
+    font-size: 11px;
+    font-weight: 780;
+    letter-spacing: 1.8px;
+}
+
+.panel-subtitle {
+    color: #687484;
+    font-size: 12px;
+}
+
+.filter-input {
+    width: 190px;
+    height: 34px;
+    padding: 0 11px;
+    border: 1px solid #303946;
+    border-radius: 8px;
+    outline: none;
+    background: #1a2028;
+    color: #dce3ec;
+    font-size: 12px;
+}
+
+.filter-input:focus {
+    border-color: #4f8cff;
+}
+
+.sort-dropdown .Select-control {
+    height: 34px !important;
+    border: 1px solid #303946 !important;
+    border-radius: 8px !important;
+    background: #1a2028 !important;
+}
+
+.sort-dropdown .Select-value,
+.sort-dropdown .Select-placeholder {
+    line-height: 32px !important;
+    color: #dce3ec !important;
+}
+
+.sort-dropdown .Select-value-label,
+.sort-dropdown .Select-arrow {
+    color: #dce3ec !important;
+}
+
+.sort-dropdown .Select-menu-outer {
+    overflow: hidden;
+    border: 1px solid #303946 !important;
+    border-radius: 8px !important;
+    background: #1a2028 !important;
+}
+
+.sort-dropdown .VirtualizedSelectOption {
+    background: #1a2028 !important;
+    color: #dce3ec !important;
+}
+
+.sort-dropdown .VirtualizedSelectFocusedOption {
+    background: #232b36 !important;
+}
+
+.subtle-button {
+    margin-left: auto;
+    padding: 6px 10px;
+    border: 1px solid #303946;
+    border-radius: 8px;
+    background: #171c23;
+    color: #9aa7b5;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.subtle-button:hover {
+    border-color: #4f8cff;
+    color: #f5f7fa;
+}
+
+/* Single-row workspace status replacing the prior 4-card KPI grid. The old
+   counters didn't tell the analyst anything actionable; this row is a glance:
+   chart count + last-run summary + health. */
+.status-strip {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding: 11px 14px;
+    border: 1px solid #232a33;
+    border-radius: 10px;
+    background: linear-gradient(180deg, #161a20 0%, #13171d 100%);
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
+    color: #c0c9d4;
+    font-size: 12px;
+}
+
+.status-counter {
+    color: #f5f7fa;
+    font-weight: 700;
+    font-size: 12.5px;
+}
+
+.status-divider {
+    color: #3e4753;
+}
+
+.status-last {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.status-key {
+    color: #8e99a8;
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.status-value {
+    color: #eaf0f7;
+    font-weight: 700;
+    font-size: 12.5px;
+}
+
+.status-meta {
+    color: #6c7785;
+    font-size: 11.5px;
+}
+
+.status-health {
+    margin-left: auto;
+    padding: 3px 9px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+}
+.status-health.ok   { color: #72e0bb; border-color: rgba(79, 209, 165, 0.28); background: rgba(79, 209, 165, 0.08); }
+.status-health.warn { color: #f4b07a; border-color: rgba(242, 145, 75, 0.36); background: rgba(242, 145, 75, 0.10); }
+
+.chart-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    align-items: start;
+}
+
+.chart-card {
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid #28303a;
+    border-radius: 12px;
+    background: #171c23;
+    box-shadow: 0 16px 34px rgba(0, 0, 0, 0.20);
+}
+
+.chart-card:hover {
+    border-color: #394453;
+}
+
+.featured-chart-card {
+    grid-column: 1 / -1;
+    background: linear-gradient(180deg, #1a2029 0%, #151a21 100%);
+}
+
+.chart-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 13px 15px 11px;
+    border-bottom: 1px solid #242b35;
+}
+
+.chart-title-block {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    min-width: 0;
+}
+
+.chart-title {
+    overflow: hidden;
+    color: #f5f7fa;
+    font-size: 15px;
+    font-weight: 760;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.featured-chart-card .chart-title {
+    font-size: 17px;
+}
+
+.chart-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.chart-meta-label {
+    flex-shrink: 0;
+    padding: 3px 7px;
+    border: 1px solid rgba(79, 140, 255, 0.26);
+    border-radius: 999px;
+    background: rgba(79, 140, 255, 0.10);
+    color: #a9c3ff;
+    font-size: 10px;
+    font-weight: 780;
+    letter-spacing: 0.55px;
+    text-transform: uppercase;
+}
+
+.chart-meta-label.neutral {
+    border-color: rgba(242, 184, 75, 0.22);
+    background: rgba(242, 184, 75, 0.08);
+    color: #f2c86b;
+}
+
+.chart-meta-query {
+    overflow: hidden;
+    color: #8e99a8;
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chart-actions {
+    display: flex;
+    gap: 7px;
+    flex-shrink: 0;
+}
+
+.chart-action-button {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid #303946;
+    border-radius: 8px;
+    background: #141920;
+    color: #9aa7b5;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+}
+
+.chart-action-button:hover {
+    border-color: #4f8cff;
+    background: #1b273d;
+    color: #ffffff;
+}
+
+.chart-action-button.danger:hover {
+    border-color: #ff7d73;
+    background: rgba(255, 125, 115, 0.12);
+    color: #ffd7d3;
+}
+
+/* Star button toggles saved state for the chart's question. */
+.chart-action-button.star {
+    color: #6c7785;
+    font-size: 15px;
+}
+.chart-action-button.star:hover {
+    border-color: #f2b84b;
+    background: rgba(242, 184, 75, 0.10);
+    color: #f2b84b;
+}
+.chart-action-button.star.is-saved {
+    border-color: rgba(242, 184, 75, 0.55);
+    background: rgba(242, 184, 75, 0.15);
+    color: #f2b84b;
+}
+.chart-action-button.star.is-saved:hover {
+    background: rgba(242, 184, 75, 0.22);
+}
+
+/* Pin button — sticky chart cards float to the top of the dashboard. */
+.chart-action-button.pin {
+    color: #6c7785;
+    font-size: 14px;
+    line-height: 1;
+}
+.chart-action-button.pin:hover {
+    border-color: #4f8cff;
+    background: rgba(79, 140, 255, 0.10);
+    color: #b9d0ff;
+}
+.chart-action-button.pin.is-pinned {
+    border-color: rgba(79, 140, 255, 0.55);
+    background: rgba(79, 140, 255, 0.14);
+    color: #b9d0ff;
+}
+
+/* Text-label buttons for CSV / PNG export — slimmer than icon buttons. */
+.chart-action-button.text-button {
+    width: auto;
+    padding: 0 10px;
+    font-size: 10.5px;
+    font-weight: 720;
+    letter-spacing: 0.06em;
+    color: #8e99a8;
+}
+.chart-action-button.text-button:hover {
+    border-color: #4f8cff;
+    background: rgba(79, 140, 255, 0.10);
+    color: #d6e6ff;
+}
+
+/* Pinned chart cards get a soft blue accent and a corner ribbon. */
+.chart-card.pinned-chart {
+    border-color: rgba(79, 140, 255, 0.32);
+    box-shadow: 0 0 0 1px rgba(79, 140, 255, 0.12), 0 18px 36px rgba(0, 0, 0, 0.22);
+}
+.chart-card.pinned-chart::before {
+    content: "PINNED";
+    position: absolute;
+    top: 12px;
+    left: 14px;
+    z-index: 2;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(79, 140, 255, 0.16);
+    color: #b9d0ff;
+    font-size: 9.5px;
+    font-weight: 780;
+    letter-spacing: 0.9px;
+}
+.chart-card.pinned-chart .chart-card-header {
+    padding-top: 30px;
+}
+.chart-card { position: relative; }
+
+/* Saved-questions panel — sits above the memo trail in the right rail. */
+.saved-panel {
+    width: 100%;
+    margin-bottom: 4px;
+    padding: 12px 14px;
+    border: 1px solid #2a313a;
+    border-radius: 11px;
+    background: linear-gradient(180deg, #181d24 0%, #161a20 100%);
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
+    animation: card-mount 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.saved-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.saved-eyebrow {
+    color: #f2b84b;
+    font-size: 10px;
+    font-weight: 780;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+}
+
+.saved-hint {
+    color: #6c7785;
+    font-size: 10.5px;
+}
+
+.saved-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.saved-chip-wrap {
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+}
+
+.saved-chip {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 7px 11px;
+    border: 1px solid #303946;
+    border-radius: 8px;
+    background: #1a1f26;
+    color: #d6dde6;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: border-color 180ms ease, background 180ms ease, color 180ms ease;
+}
+.saved-chip:hover {
+    border-color: #4f8cff;
+    background: #1b273d;
+    color: #ffffff;
+}
+
+.saved-chip-remove {
+    width: 28px;
+    flex-shrink: 0;
+    padding: 0;
+    border: 1px solid #2a313a;
+    border-radius: 8px;
+    background: transparent;
+    color: #6c7785;
+    cursor: pointer;
+    font-size: 11px;
+    transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
+}
+.saved-chip-remove:hover {
+    border-color: rgba(255, 125, 115, 0.5);
+    background: rgba(255, 125, 115, 0.10);
+    color: #ffb1aa;
+}
+
+/* Undo toast — appears at bottom center for 5s after a soft-delete. */
+.undo-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 28px;
+    z-index: 80;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 11px 16px 11px 18px;
+    border: 1px solid #2e3640;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #1c2129 0%, #181d24 100%);
+    box-shadow: 0 22px 44px rgba(0, 0, 0, 0.45);
+    color: #d6dde6;
+    font-size: 13px;
+    transform: translate(-50%, 0);
+    animation: toast-in 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.undo-toast.hidden {
+    display: none;
+}
+
+@keyframes toast-in {
+    from { opacity: 0; transform: translate(-50%, 14px); }
+    to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.undo-text {
+    color: #c0c9d4;
+}
+.undo-text strong {
+    color: #f5f7fa;
+    font-weight: 700;
+}
+
+.undo-btn {
+    padding: 5px 12px;
+    border: 1px solid rgba(79, 140, 255, 0.45);
+    border-radius: 8px;
+    background: rgba(79, 140, 255, 0.14);
+    color: #b9d0ff;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+.undo-btn:hover {
+    border-color: rgba(79, 140, 255, 0.75);
+    background: rgba(79, 140, 255, 0.22);
+    color: #ffffff;
+}
+
+/* Notice toast — duplicate-detection surface. Same layout as undo, slightly
+   different palette to distinguish from a destructive-undo affordance. */
+.notice-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 92px;          /* sits above the undo toast if both are visible */
+    z-index: 79;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 11px 16px 11px 18px;
+    border: 1px solid rgba(79, 140, 255, 0.32);
+    border-radius: 12px;
+    background: linear-gradient(180deg, #1a2030 0%, #161b24 100%);
+    box-shadow: 0 22px 44px rgba(0, 0, 0, 0.45);
+    color: #d6dde6;
+    font-size: 13px;
+    transform: translate(-50%, 0);
+    animation: toast-in 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.notice-toast.hidden { display: none; }
+
+.notice-text {
+    color: #c0c9d4;
+}
+
+.notice-btn {
+    padding: 5px 12px;
+    border: 1px solid rgba(79, 140, 255, 0.55);
+    border-radius: 8px;
+    background: rgba(79, 140, 255, 0.18);
+    color: #cfe0ff;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+.notice-btn:hover {
+    border-color: rgba(79, 140, 255, 0.85);
+    background: rgba(79, 140, 255, 0.28);
+    color: #ffffff;
+}
+
+/* Flash-pulse — momentary highlight on a chart card after scrollIntoView,
+   so the user sees which existing card matched their duplicate. */
+.chart-card.flash-pulse {
+    animation: flash-pulse 1.4s ease-out;
+}
+@keyframes flash-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(79, 140, 255, 0); }
+    20%  { box-shadow: 0 0 0 4px rgba(79, 140, 255, 0.45), 0 18px 36px rgba(0, 0, 0, 0.22); }
+    100% { box-shadow: 0 0 0 0 rgba(79, 140, 255, 0); }
+}
+
+/* Skeleton shimmer — appears at the top of the dashboard while a pipeline
+   run is in flight. Driven by a clientside class toggle, no Python needed. */
+#agentic_bi_page_dashboard.is-pipeline-running::before {
+    content: "";
+    display: block;
+    height: 220px;
+    margin: 0 0 16px;
+    border-radius: 12px;
+    border: 1px solid #232a33;
+    background: linear-gradient(110deg,
+        #1a1f26 0%,
+        #1a1f26 30%,
+        #232932 50%,
+        #1a1f26 70%,
+        #1a1f26 100%);
+    background-size: 220% 100%;
+    animation: skeleton-shimmer 1.6s linear infinite;
+    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.18);
+}
+
+@keyframes skeleton-shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* Schema preview — fills the dead space below the memo trail with a quiet
+   reference of available schemas/tables. Click a schema row to expand. */
+.schema-panel {
+    width: 100%;
+    margin-top: 14px;
+    padding: 12px 14px;
+    border: 1px solid #232a33;
+    border-radius: 11px;
+    background: linear-gradient(180deg, #14181f 0%, #12161c 100%);
+    color: #c0c9d4;
+    animation: card-mount 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.schema-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.schema-eyebrow {
+    color: #8e99a8;
+    font-size: 10px;
+    font-weight: 780;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+}
+
+.schema-hint {
+    color: #6c7785;
+    font-size: 10.5px;
+}
+
+.schema-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.schema-section {
+    border: 1px solid #1f252e;
+    border-radius: 8px;
+    background: #161b22;
+    transition: border-color 180ms ease, background 180ms ease;
+}
+.schema-section[open] {
+    border-color: #28303a;
+    background: #181d24;
+}
+
+.schema-summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    cursor: pointer;
+    list-style: none;
+    color: #c0c9d4;
+    font-size: 11.5px;
+    font-weight: 650;
+}
+.schema-summary::-webkit-details-marker { display: none; }
+.schema-summary::after {
+    content: "";
+    margin-left: auto;
+    width: 6px;
+    height: 6px;
+    border-right: 1.4px solid #687484;
+    border-bottom: 1.4px solid #687484;
+    transform: rotate(45deg);
+    transition: transform 200ms ease, border-color 200ms ease;
+}
+.schema-section[open] .schema-summary::after {
+    transform: rotate(-135deg);
+    border-color: #c0c9d4;
+}
+
+.schema-name {
+    color: #d6dde6;
+    letter-spacing: 0.04em;
+}
+
+.schema-count {
+    padding: 1px 6px;
+    border: 1px solid #2a313a;
+    border-radius: 999px;
+    background: #131820;
+    color: #8e99a8;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.schema-tables {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 0 10px 10px;
+}
+
+.schema-table {
+    padding: 2px 6px;
+    border-radius: 5px;
+    background: #131820;
+    color: #8e99a8;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10.5px;
+}
+.schema-table.more {
+    color: #687484;
+    background: transparent;
+    font-style: italic;
+}
+
+.chart-figure-wrap {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    padding: 4px 10px 0;
+    background:
+        radial-gradient(circle at 80% 10%, rgba(79, 140, 255, 0.06), transparent 32%),
+        #171a1f;
+}
+
+.dash-graph {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: hidden;
+}
+
+.chart-card .js-plotly-plot,
+.chart-card .plot-container,
+.chart-card .svg-container,
+.chart-card .main-svg {
+    width: 100% !important;
+    max-width: 100% !important;
+}
+
+.dash-graph .modebar {
+    display: none !important;
+}
+
+.chart-drawers {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    padding: 12px 14px 14px;
+    border-top: 1px solid #242b35;
+    background: #151a21;
+}
+
+.detail-drawer {
+    min-width: 0;
+    border: 1px solid #28303a;
+    border-radius: 9px;
+    background: #12171d;
+}
+
+.detail-drawer[open] {
+    grid-column: 1 / -1;
+    border-color: #3a4654;
+    background: #11161c;
+}
+
+.detail-drawer summary {
+    padding: 10px 12px;
+    color: #aab5c2;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 780;
+    letter-spacing: 1px;
+    list-style: none;
+    text-transform: uppercase;
+}
+
+.detail-drawer summary::-webkit-details-marker {
+    display: none;
+}
+
+/* Chevron instead of "+" — the plus read as "add" rather than "expand". */
+.detail-drawer summary::after {
+    content: "";
+    float: right;
+    width: 7px;
+    height: 7px;
+    margin-top: 6px;
+    border-right: 1.6px solid #8e99a8;
+    border-bottom: 1.6px solid #8e99a8;
+    transform: rotate(45deg);
+    transition: transform 220ms ease, border-color 220ms ease;
+}
+
+.detail-drawer[open] summary::after {
+    margin-top: 8px;
+    transform: rotate(-135deg);
+    border-color: #c0c9d4;
+}
+
+.detail-drawer summary:hover::after {
+    border-color: #d6dde6;
+}
+
+.detail-drawer pre {
+    overflow: auto;
+    max-height: 190px;
+    margin: 0;
+    padding: 0 12px 12px;
+    color: #cfd7e2;
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 11px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+}
+
+.data-preview-table {
+    width: calc(100% - 24px);
+    margin: 0 12px 12px;
+    border-collapse: collapse;
+    color: #cfd7e2;
+    font-size: 11px;
+}
+
+.data-preview-table th,
+.data-preview-table td {
+    overflow: hidden;
+    max-width: 180px;
+    padding: 7px 8px;
+    border-bottom: 1px solid #242b35;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.data-preview-table th {
+    color: #8e99a8;
+    font-weight: 760;
+    letter-spacing: 0.7px;
+    text-transform: uppercase;
+}
+
+.detail-empty {
+    padding: 0 12px 12px;
+    color: #687484;
+    font-size: 12px;
+}
+
+.insight-markdown {
+    color: #dce3ec;
+    font-size: 13px;
+    line-height: 1.62;
+}
+
+.insight-markdown p {
+    margin: 8px 0 0;
+}
+
+.insight-markdown strong {
+    color: #f5f7fa;
+}
+
+.message-label {
+    display: block;
+    margin-bottom: 5px;
+    color: #8be8c8;
+    font-size: 10px;
+    font-weight: 780;
+    letter-spacing: 0.9px;
+    text-transform: uppercase;
+}
+
+.memo-card {
+    width: 100%;
+    padding: 14px 15px;
+    border: 1px solid #28303a;
+    border-radius: 12px;
+    background: #1a1f26;
+    box-shadow: 0 14px 28px rgba(0, 0, 0, 0.18);
+}
+
+.primary-memo {
+    border-color: rgba(79, 209, 165, 0.32);
+    border-left: 3px solid #4fd1a5;
+    background:
+        radial-gradient(circle at 92% 8%, rgba(79, 209, 165, 0.10), transparent 34%),
+        #1a1f26;
+}
+
+.history-memo {
+    opacity: 0.78;
+}
+
+.history-memo:hover {
+    opacity: 1;
+}
+
+/* Failed memos take an amber accent so they read as "couldn't answer", not
+   "successful narrative". Overrides the green primary-memo accent. */
+.failed-memo {
+    border-color: rgba(242, 145, 75, 0.32) !important;
+    border-left: 3px solid #f2914b !important;
+    background:
+        radial-gradient(circle at 92% 8%, rgba(242, 145, 75, 0.10), transparent 34%),
+        #1a1f26 !important;
+}
+
+.failed-memo .memo-question {
+    border-color: rgba(242, 145, 75, 0.22);
+    background: rgba(242, 145, 75, 0.08);
+    color: #fbe1cc;
+}
+
+.memo-status.failed {
+    border-color: rgba(242, 145, 75, 0.42);
+    background: rgba(242, 145, 75, 0.10);
+    color: #f6c89a;
+}
+
+.memo-card-topline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.memo-status {
+    padding: 3px 7px;
+    border: 1px solid rgba(79, 140, 255, 0.22);
+    border-radius: 999px;
+    color: #a9c3ff;
+    font-size: 10px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.memo-question {
+    margin: 9px 0 4px;
+    padding: 9px 10px;
+    border: 1px solid rgba(79, 140, 255, 0.18);
+    border-radius: 9px;
+    background: rgba(79, 140, 255, 0.08);
+    color: #dce8ff;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.message-text {
+    font-size: 13px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+}
+
+.welcome-panel,
+.empty-panel {
+    padding: 24px;
+    border: 1px solid #28303a;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #1a2028 0%, #151a21 100%);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+}
+
+.empty-title,
+.memo-title {
+    color: #f5f7fa;
+    font-size: 20px;
+    font-weight: 780;
+    line-height: 1.2;
+}
+
+.memo-title {
+    font-size: 16px;
+}
+
+.empty-copy,
+.memo-copy {
+    max-width: 660px;
+    margin-top: 10px;
+    color: #8994a3;
+    font-size: 13px;
+    line-height: 1.65;
+}
+
+.memo-eyebrow {
+    margin-top: 18px;
+    margin-bottom: 10px;
+    color: #687484;
+    font-size: 11px;
+    font-weight: 780;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+}
+
+.suggestion-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 18px;
+}
+
+.suggestion-row.compact {
+    margin-top: 0;
+}
+
+.suggested-chip {
+    padding: 8px 11px;
+    border: 1px solid #303946;
+    border-radius: 999px;
+    background: #171c23;
+    color: #cfd7e2;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 650;
+    transition: border-color 180ms ease, background 180ms ease, color 180ms ease, transform 120ms ease;
+}
+
+.suggested-chip:hover {
+    border-color: #4f8cff;
+    background: #1b273d;
+    color: #ffffff;
+    transform: translateY(-1px);
+}
+.suggested-chip:active {
+    transform: translateY(0);
+}
+
+/* Empty-state proof-of-life: show real connection state instead of generic copy. */
+.conn-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+}
+
+.conn-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px solid #2a313a;
+    border-radius: 999px;
+    background: #161b22;
+    color: #c0c9d4;
+    font-size: 11px;
+    font-weight: 650;
+}
+.conn-pill.muted   { color: #8e99a8; }
+.conn-pill.error   { color: #ff8e96; border-color: rgba(255, 100, 110, 0.42); background: rgba(255, 100, 110, 0.06); }
+
+.conn-pill .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: #4fd1a5;
+    box-shadow: 0 0 0 3px rgba(79, 209, 165, 0.18);
+}
+.conn-pill .dot.ok  { background: #4fd1a5; box-shadow: 0 0 0 3px rgba(79, 209, 165, 0.18); }
+.conn-pill .dot.err { background: #ff8e96; box-shadow: 0 0 0 3px rgba(255, 100, 110, 0.18); }
+
+.empty-cta {
+    margin-top: 18px;
+    color: #8e99a8;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+}
+
+.memo-step {
+    margin-top: 10px;
+    color: #c0c9d4;
+    font-size: 12.5px;
+    line-height: 1.55;
+}
+.memo-step .step-num {
+    margin-right: 8px;
+    color: #6c7785;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+/* Collapsed history memos — one-line summary, expand on click. */
+details.collapsed-memo {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #28303a;
+    border-radius: 11px;
+    background: #1a1f26;
+    transition: border-color 200ms ease, background 200ms ease;
+}
+details.collapsed-memo[open] {
+    background: #1c2129;
+    border-color: #344050;
+}
+
+details.collapsed-memo > summary.history-summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #c0c9d4;
+    font-size: 12px;
+    font-weight: 650;
+}
+details.collapsed-memo > summary.history-summary::-webkit-details-marker { display: none; }
+details.collapsed-memo > summary.history-summary::after {
+    content: "";
+    margin-left: auto;
+    width: 7px;
+    height: 7px;
+    border-right: 1.6px solid #687484;
+    border-bottom: 1.6px solid #687484;
+    transform: rotate(45deg);
+    transition: transform 220ms ease, border-color 220ms ease;
+}
+details.collapsed-memo[open] > summary.history-summary::after {
+    transform: rotate(-135deg);
+    border-color: #c0c9d4;
+}
+
+.history-question {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #d6dde6;
+}
+.memo-status.small {
+    padding: 2px 6px;
+    font-size: 9.5px;
+}
+.insight-markdown.muted {
+    margin-top: 10px;
+    opacity: 0.85;
+    border-top: 1px dashed #2a313a;
+    padding-top: 10px;
+}
+
+/* Failed history memos still get the amber accent on their collapsed shell. */
+details.collapsed-memo.failed-memo {
+    border-color: rgba(242, 145, 75, 0.30) !important;
+    background: rgba(242, 145, 75, 0.04) !important;
+}
+
+/* Chart card mount — gentle fade + lift so each new card lands with weight. */
+.chart-card,
+.memo-card,
+details.collapsed-memo {
+    animation: card-mount 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes card-mount {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.chart-card { transition: border-color 200ms ease, transform 160ms ease, box-shadow 200ms ease; }
+.chart-card:hover {
+    border-color: #34404d;
+    box-shadow: 0 22px 40px rgba(0, 0, 0, 0.28);
+}
+
+/* Chart meta-row visual hierarchy: type chip stays prominent, row count
+   becomes plain-text, query becomes secondary copy. */
+.chart-meta-label.neutral {
+    border: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    color: #6c7785 !important;
+    font-weight: 600 !important;
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+}
+
+button[id*="suggested-query"]:hover {
+    background: #1b273d !important;
+}
+
+@media (max-width: 1380px) {
+    .command-bar {
+        grid-template-columns: minmax(200px, 0.55fr) minmax(420px, 2fr);
+    }
+
+    .chat-panel {
+        width: 360px !important;
+        min-width: 340px !important;
+    }
+}
+
+@media (max-width: 1180px) {
+    .command-bar {
+        grid-template-columns: 1fr;
+    }
+    .progress-steps {
+        justify-content: flex-start;
+    }
+    .status-strip {
+        flex-wrap: wrap;
+    }
+    .status-health {
+        margin-left: 0;
+    }
+}
+
+@media (max-width: 980px) {
+    .chart-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    .main-layout {
+        flex-direction: column !important;
+    }
+
+    .chat-panel {
+        width: 100% !important;
+        min-width: auto !important;
+        max-width: none !important;
+        height: 40% !important;
+        border-top: 1px solid #242b35;
+    }
+
+    .chart-drawers {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Database Connection Modal */
+.db-modal {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    backdrop-filter: blur(4px);
+    opacity: 1;
+    transition: opacity 0.2s;
+}
+
+.db-modal.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.db-modal .modal-content {
+    background: #15181d;
+    border: 1px solid #2a313a;
+    border-radius: 12px;
+    padding: 24px;
+    width: 400px;
+    max-width: 90%;
+    position: relative;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+
+/* Connect Database Button - Primary Action */
+.connect-db-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 48px;
+    padding: 0 32px;
+    border: 1px solid rgba(79, 140, 255, 0.5);
+    border-radius: 24px;
+    background: linear-gradient(180deg, #3d7eff 0%, #2968eb 100%);
+    box-shadow: 0 4px 14px rgba(41, 104, 235, 0.3), inset 0 1px 1px rgba(255, 255, 255, 0.2);
+    color: #ffffff;
+    font-size: 14.5px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.connect-db-btn:hover {
+    background: linear-gradient(180deg, #4f8cff 0%, #3d7eff 100%);
+    box-shadow: 0 6px 20px rgba(41, 104, 235, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.3);
+    transform: translateY(-1px);
+}
+
+.connect-db-btn:active {
+    transform: translateY(1px);
+    box-shadow: 0 2px 8px rgba(41, 104, 235, 0.3);
+}
+
+/* Custom styling for the database list radio buttons */
+.db-radio-group label {
+    display: flex;
+    align-items: center;
+    padding: 14px 18px;
+    background: #1a2028;
+    border: 1px solid #303946;
+    border-radius: 8px;
+    cursor: pointer;
+    color: #e5e7eb;
+    font-size: 13.5px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    margin-bottom: 8px;
+}
+
+.db-radio-group label:hover {
+    border-color: #4f8cff;
+    background: #1e2630;
+}
+
+/* Hide default radio completely */
+.db-radio-group input[type="radio"] {
+    display: none;
+}
+
+/* Highlight the whole row when selected with a cool effect */
+.db-radio-group label:has(input[type="radio"]:checked) {
+    border-color: #4f8cff;
+    background: rgba(79, 140, 255, 0.12);
+    box-shadow: 0 4px 14px rgba(79, 140, 255, 0.15), inset 0 0 0 1px #4f8cff;
+    color: #ffffff;
+}
+
+/* Add a subtle check icon to the selected row using pseudo-elements */
+.db-radio-group label:has(input[type="radio"]:checked)::after {
+    content: '✓';
+    margin-left: auto;
+    color: #4f8cff;
+    font-size: 16px;
+    font-weight: bold;
 }
